@@ -1,0 +1,127 @@
+// hqprep parses rows the luatdo pipeline leaves out, with luatdo's own parser.
+//
+// It reads the selection that select.py wrote, streams content.parquet once,
+// and for every selected row writes a law.Document beside the plain text it was
+// read from, so a later step can take what the tree builder could not.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/parquet-go/parquet-go"
+	"github.com/tamnd/luatdo/law"
+	"github.com/tamnd/luatdo/parse"
+	"github.com/tamnd/luatdo/store"
+)
+
+type pick struct {
+	ItemID         string `json:"item_id"`
+	Kind           string `json:"kind"`
+	Verdict        string `json:"verdict,omitempty"`
+	Tier           int    `json:"tier,omitempty"`
+	ID             string `json:"id"`
+	OfficialNumber string `json:"official_number"`
+	Title          string `json:"title"`
+	DocType        string `json:"doc_type"`
+	IssuingBody    string `json:"issuing_body"`
+	SignedOn       string `json:"signed_on"`
+	EffectiveFrom  string `json:"effective_from"`
+	ExpiredOn      string `json:"expired_on"`
+	ForceStatus    string `json:"force_status"`
+}
+
+type content struct {
+	ID          string `parquet:"id"`
+	ContentHTML string `parquet:"content_html"`
+}
+
+type out struct {
+	Doc     *law.Document `json:"doc"`
+	Kind    string        `json:"kind"`
+	Verdict string        `json:"verdict,omitempty"`
+	Tier    int           `json:"tier,omitempty"`
+	Text    string        `json:"text"`
+}
+
+func main() {
+	if len(os.Args) != 4 {
+		fmt.Fprintln(os.Stderr, "usage: hqprep <select.json> <content.parquet> <out-dir>")
+		os.Exit(2)
+	}
+	if err := run(os.Args[1], os.Args[2], os.Args[3]); err != nil {
+		fmt.Fprintln(os.Stderr, "hqprep:", err)
+		os.Exit(1)
+	}
+}
+
+func run(selPath, contentPath, outDir string) error {
+	raw, err := os.ReadFile(selPath)
+	if err != nil {
+		return err
+	}
+	var picks []pick
+	if err := json.Unmarshal(raw, &picks); err != nil {
+		return err
+	}
+	byItem := make(map[string]pick, len(picks))
+	for _, p := range picks {
+		byItem[p.ItemID] = p
+	}
+
+	f, err := os.Open(contentPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r := parquet.NewGenericReader[content](f)
+	defer r.Close()
+
+	counts := map[string]int{}
+	buf := make([]content, 256)
+	for {
+		n, err := r.Read(buf)
+		for _, row := range buf[:n] {
+			p, ok := byItem[row.ID]
+			if !ok {
+				continue
+			}
+			text := parse.HTMLText(row.ContentHTML)
+			doc := &law.Document{
+				ID: p.ID, OfficialNumber: p.OfficialNumber, IssuingBody: p.IssuingBody, Title: p.Title,
+				DocType: p.DocType, EffectiveFrom: p.EffectiveFrom, SignedOn: p.SignedOn, ExpiredOn: p.ExpiredOn,
+				ForceStatus: p.ForceStatus, Source: "th1nhng0",
+				SourceURL:  "https://vbpl.vn/pages/portal.aspx?ItemID=" + p.ItemID,
+				SourceHash: store.HashBytes([]byte(text)), Status: "parsed",
+			}
+			doc.Provisions = parse.Fragment(p.ID, text)
+			if len(doc.Provisions) == 0 {
+				doc.Status = "text-only"
+			}
+			counts[p.Kind+"/"+doc.Status]++
+			dir := filepath.Join(outDir, p.Kind)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			b, err := json.Marshal(out{Doc: doc, Kind: p.Kind, Verdict: p.Verdict, Tier: p.Tier, Text: text})
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, law.FileName(p.ID)), b, 0o644); err != nil {
+				return err
+			}
+			delete(byItem, row.ID)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("parsed:", counts, "selected rows with no content:", len(byItem))
+	return nil
+}

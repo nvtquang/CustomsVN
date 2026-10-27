@@ -1,0 +1,46 @@
+CustomsVN
+Copyright (c) 2026 nvtquang
+Licensed under the MIT License (see LICENSE).
+
+This product includes software and data from the third parties below.
+
+--------------------------------------------------------------------------------
+Legal texts — Cơ sở dữ liệu quốc gia về văn bản pháp luật (vbpl.vn)
+--------------------------------------------------------------------------------
+The legal documents, their metadata, force status and the relations between
+them originate from the National Legal Documents Database at https://vbpl.vn,
+operated by the Ministry of Justice of Vietnam.
+
+Under Article 15(1) of the Law on Intellectual Property of Vietnam, legal
+normative documents are not subject to copyright protection. The compilation
+used here is the dataset below, redistributed under its own licence.
+
+Văn bản pháp luật được lấy từ Cơ sở dữ liệu quốc gia về văn bản pháp luật
+(https://vbpl.vn). Theo khoản 1 Điều 15 Luật Sở hữu trí tuệ, văn bản quy phạm
+pháp luật không thuộc phạm vi bảo hộ quyền tác giả.
+
+--------------------------------------------------------------------------------
+Dataset — th1nhng0/vietnamese-legal-documents
+--------------------------------------------------------------------------------
+https://huggingface.co/datasets/th1nhng0/vietnamese-legal-documents
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Revision used: 8977887f17be2defae4c5171d55562e1cde7d695 (crawled from vbpl.vn,
+refreshed 2026-07-23). Changes made by CustomsVN: documents are parsed into
+articles, clauses and points, filtered by force status and subject, tiered by
+relevance to customs, chunked and indexed for retrieval.
+
+The same dataset's legacy_metadata and legacy_content configs ("an older,
+larger crawl snapshot", same revision and licence) fill consolidated texts
+(VBHN) whose page at vbpl.vn is empty. `customsvn prep` uses them by default;
+`-legacy=false` turns it off. The dataset does not document which site that
+older crawl came from. Chunks built from it carry "text_source": "legacy_content".
+
+--------------------------------------------------------------------------------
+Dataset — undertheseanlp/UTS_VLC
+--------------------------------------------------------------------------------
+https://huggingface.co/datasets/undertheseanlp/UTS_VLC
+Licence: MIT
+
+--------------------------------------------------------------------------------
+

@@ -1,0 +1,34 @@
+# build output
+/bin/
+/dist/
+*.exe
+
+# local Go workspace pointing at a luatdo clone
+go.work
+go.work.sum
+
+# data, embeddings and secrets never enter the repo
+/data/
+*.parquet
+*.jsonl
+.env
+.env.*
+!.env.example
+
+# web
+/web/node_modules/
+/web/dist/*
+!/web/dist/.gitkeep
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# python prototypes
+__pycache__/
+.venv/
+
+# browser automation scratch
+.playwright-mcp/
