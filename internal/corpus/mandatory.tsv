@@ -1,0 +1,99 @@
+# Danh mục văn bản hải quan bắt buộc (bản nháp, chờ chuyên gia duyệt).
+# number<TAB>title cue<TAB>group<TAB>note
+# The title cue must occur in the store title (case and diacritics folded); a
+# mismatch means the number here is wrong, not that the store is.
+54/2014/QH13	hải quan	luat	Luật Hải quan
+107/2016/QH13	thuế xuất khẩu, thuế nhập khẩu	luat	Luật Thuế XK, NK
+05/2017/QH14	ngoại thương	luat	Luật Quản lý ngoại thương
+108/2025/QH15	quản lý thuế	luat	Luật Quản lý thuế 2025, thay 38/2019/QH14 từ 01/07/2026
+38/2019/QH14	quản lý thuế	luat	Luật Quản lý thuế 2019
+90/2025/QH15	luật hải quan	luat	Luật sửa nhiều luật, có Luật Hải quan và Luật Thuế XK, NK
+48/2024/QH15	giá trị gia tăng	luat	Luật Thuế GTGT
+66/2025/QH15	tiêu thụ đặc biệt	luat	Luật Thuế TTĐB
+15/2012/QH13	xử lý vi phạm hành chính	luat	Luật Xử lý vi phạm hành chính
+36/2005/QH11	thương mại	luat	Luật Thương mại
+05/2007/QH12	chất lượng sản phẩm	luat	Luật Chất lượng sản phẩm, hàng hóa
+55/2010/QH12	an toàn thực phẩm	luat	Luật An toàn thực phẩm
+79/2015/QH13	thú y	luat	Luật Thú y
+41/2013/QH13	kiểm dịch thực vật	luat	Luật Bảo vệ và kiểm dịch thực vật
+20/2023/QH15	giao dịch điện tử	luat	Luật Giao dịch điện tử
+08/2015/NĐ-CP	luật hải quan	thu-tuc	Chi tiết Luật Hải quan về thủ tục, kiểm tra, giám sát
+59/2018/NĐ-CP	08/2015	thu-tuc	Sửa NĐ 08/2015
+167/2025/NĐ-CP	08/2015	thu-tuc	Sửa NĐ 08/2015
+01/2015/NĐ-CP	địa bàn hoạt động hải quan	thu-tuc	Địa bàn hoạt động hải quan
+12/2018/NĐ-CP	01/2015	thu-tuc	Sửa NĐ 01/2015
+153/2026/NĐ-CP	01/2015	thu-tuc	Sửa NĐ 01/2015
+46/2020/NĐ-CP	quá cảnh	thu-tuc	Quá cảnh qua Hệ thống quá cảnh hải quan ASEAN
+68/2016/NĐ-CP	miễn thuế	thu-tuc	Kinh doanh hàng miễn thuế, kho bãi
+67/2020/NĐ-CP	68/2016	thu-tuc	Sửa NĐ 68/2016
+85/2019/NĐ-CP	một cửa quốc gia	thu-tuc	Cơ chế một cửa quốc gia, một cửa ASEAN
+217/2025/NĐ-CP	kiểm tra chuyên ngành	kiem-tra	Hoạt động kiểm tra chuyên ngành
+15/2018/NĐ-CP	an toàn thực phẩm	kiem-tra	Chi tiết Luật An toàn thực phẩm
+134/2016/NĐ-CP	thuế xuất khẩu	thue	Chi tiết Luật Thuế XK, NK
+18/2021/NĐ-CP	134/2016	thue	Sửa NĐ 134/2016
+182/2025/NĐ-CP	134/2016	thue	Sửa NĐ 134/2016
+126/2020/NĐ-CP	quản lý thuế	thue	Chi tiết Luật Quản lý thuế 2019
+26/2023/NĐ-CP	biểu thuế	bieu-thue	Biểu thuế XK, Biểu thuế NK ưu đãi
+144/2024/NĐ-CP	26/2023	bieu-thue	Sửa NĐ 26/2023
+21/2025/NĐ-CP	26/2023	bieu-thue	Sửa Điều 9 NĐ 26/2023
+73/2025/NĐ-CP	thuế suất	bieu-thue	Sửa thuế suất NK ưu đãi
+108/2025/NĐ-CP	26/2023	bieu-thue	Sửa NĐ 26/2023
+199/2025/NĐ-CP	26/2023	bieu-thue	Sửa NĐ 26/2023
+260/2025/NĐ-CP	thuế xuất khẩu	bieu-thue	Sửa thuế suất XK
+201/2026/NĐ-CP	thuế xuất khẩu	bieu-thue	Sửa thuế suất XK
+115/2022/NĐ-CP	ưu đãi đặc biệt	bieu-thue	Biểu thuế ưu đãi đặc biệt (FTA)
+116/2022/NĐ-CP	ưu đãi đặc biệt	bieu-thue	Biểu thuế ưu đãi đặc biệt (FTA)
+206/2025/NĐ-CP	ưu đãi đặc biệt	bieu-thue	Biểu thuế ưu đãi đặc biệt (FTA)
+56/2026/NĐ-CP	ưu đãi đặc biệt	bieu-thue	Biểu thuế ưu đãi đặc biệt (FTA)
+143/2026/NĐ-CP	ưu đãi đặc biệt	bieu-thue	Biểu thuế ưu đãi đặc biệt (FTA)
+69/2018/NĐ-CP	ngoại thương	ngoai-thuong	Chi tiết Luật Quản lý ngoại thương
+10/2018/NĐ-CP	phòng vệ thương mại	ngoai-thuong	Biện pháp phòng vệ thương mại
+18/2019/QĐ-TTg	máy móc, thiết bị	ngoai-thuong	Nhập khẩu máy móc, thiết bị đã qua sử dụng
+31/2018/NĐ-CP	xuất xứ	xuat-xu	Chi tiết Luật QLNT về xuất xứ
+169/2026/NĐ-CP	lĩnh vực hải quan	xu-phat	Xử phạt VPHC trong lĩnh vực hải quan
+128/2020/NĐ-CP	lĩnh vực hải quan	xu-phat	Xử phạt VPHC hải quan, thay bởi 169/2026/NĐ-CP
+102/2021/NĐ-CP	xử phạt	xu-phat	Sửa các nghị định xử phạt
+98/2020/NĐ-CP	hoạt động thương mại	xu-phat	Xử phạt trong hoạt động thương mại
+35/2022/NĐ-CP	khu công nghiệp	khac	Khu công nghiệp, khu kinh tế, khu chế xuất
+38/2015/TT-BTC	thủ tục hải quan	thu-tuc	Thủ tục hải quan; kiểm tra, giám sát; thuế
+39/2018/TT-BTC	38/2015	thu-tuc	Sửa TT 38/2015
+121/2025/TT-BTC	thủ tục hải quan	thu-tuc	Sửa TT 38/2015 và các thông tư thủ tục
+50/2018/TT-BTC	chỉ tiêu thông tin	thu-tuc	Chỉ tiêu thông tin, mẫu chứng từ
+49/2015/TT-BTC	thư, gói, kiện	thu-tuc	Hàng gửi qua bưu chính
+56/2019/TT-BTC	49/2015	thu-tuc	Sửa TT 49/2015
+191/2015/TT-BTC	chuyển phát nhanh	thu-tuc	Hàng gửi qua dịch vụ chuyển phát nhanh
+29/2025/TT-BTC	191/2015	thu-tuc	Sửa TT 191/2015
+12/2015/TT-BTC	khai hải quan	thu-tuc	Chứng chỉ nghiệp vụ khai hải quan, đại lý
+22/2019/TT-BTC	12/2015	thu-tuc	Sửa TT 12/2015
+25/2026/TT-BTC	12/2015	thu-tuc	Sửa TT 12/2015
+83/2026/TT-BTC	đại lý làm thủ tục hải quan	thu-tuc	Tiêu chuẩn đại lý làm thủ tục hải quan
+13/2015/TT-BTC	tạm dừng làm thủ tục hải quan	thu-tuc	Kiểm soát hàng hóa liên quan sở hữu trí tuệ
+06/2026/TT-BTC	13/2015	thu-tuc	Sửa TT 13/2015
+81/2019/TT-BTC	quản lý rủi ro	thu-tuc	Quản lý rủi ro
+06/2024/TT-BTC	81/2019	thu-tuc	Sửa TT 81/2019
+72/2015/TT-BTC	chế độ ưu tiên	thu-tuc	Doanh nghiệp ưu tiên
+203/2014/TT-BTC	tồn đọng	thu-tuc	Xử lý hàng hóa tồn đọng
+78/2026/TT-BTC	203/2014	thu-tuc	Sửa TT 203/2014
+80/2016/TTLT-BTC-BTTTT	một cửa quốc gia	thu-tuc	Một cửa quốc gia
+39/2015/TT-BTC	trị giá hải quan	tri-gia	Trị giá hải quan
+60/2019/TT-BTC	39/2015	tri-gia	Sửa TT 39/2015
+14/2015/TT-BTC	phân loại hàng hóa	hs	Phân loại hàng hóa
+17/2021/TT-BTC	14/2015	hs	Sửa TT 14/2015
+85/2026/TT-BTC	phân loại hàng hóa	hs	Phân loại hàng hóa (mới)
+31/2022/TT-BTC	danh mục hàng hóa xuất khẩu, nhập khẩu	hs	Danh mục hàng hóa XNK Việt Nam (HS)
+33/2023/TT-BTC	xuất xứ	xuat-xu	Xác định xuất xứ hàng hóa XNK
+05/2018/TT-BCT	xuất xứ	xuat-xu	Xuất xứ hàng hóa
+40/2025/TT-BCT	xuất xứ	xuat-xu	Cấp C/O và chấp thuận tự chứng nhận
+21/2019/TT-BCT	xuất xứ	xuat-xu	Quy tắc xuất xứ CPTPP
+11/2020/TT-BCT	xuất xứ	xuat-xu	Quy tắc xuất xứ EVFTA
+49/2025/TT-BCT	xuất xứ	xuat-xu	Quy tắc xuất xứ FTA
+14/2026/TT-BCT	xuất xứ	xuat-xu	Quy tắc xuất xứ FTA
+25/2015/TT-BTC	ưu đãi đặc biệt	bieu-thue	Biểu thuế NK ưu đãi đặc biệt
+06/2021/TT-BTC	quản lý thuế	thue	Quản lý thuế với hàng hóa XNK
+80/2021/TT-BTC	quản lý thuế	thue	Hướng dẫn Luật Quản lý thuế
+86/2025/TT-BTC	phí hải quan	thue	Phí hải quan, lệ phí hàng hóa quá cảnh
+113/2025/TT-BTC	biên lai	thue	Biên lai thu thuế hàng hóa XNK
+05/2026/TT-BTC	kiểm tra chuyên ngành	kiem-tra	Phân cấp kiểm tra chuyên ngành của Bộ Tài chính
+56/2025/TT-BCT	kiểm tra chuyên ngành	kiem-tra	Kiểm tra chuyên ngành Công Thương
+17/2026/TT-BYT	kiểm tra chuyên ngành	kiem-tra	Kiểm tra chuyên ngành y tế
+12/2018/TT-BCT	ngoại thương	ngoai-thuong	Chi tiết Luật QLNT và NĐ 69/2018
