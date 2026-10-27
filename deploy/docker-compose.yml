@@ -1,0 +1,25 @@
+# Development database: PostgreSQL 17 with pgvector, pg_trgm and unaccent.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#   export CUSTOMSVN_DATABASE_URL=postgres://customsvn:customsvn@localhost:55432/customsvn?sslmode=disable
+#
+# The password here is for a local throwaway database only. The app service and
+# a production setup arrive with the Dockerfile in Phase 5.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: customsvn
+      POSTGRES_PASSWORD: customsvn
+      POSTGRES_DB: customsvn
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - customsvn-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customsvn"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  customsvn-pg:

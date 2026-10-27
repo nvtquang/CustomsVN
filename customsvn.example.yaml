@@ -1,0 +1,43 @@
+# Copy to customsvn.yaml. This file holds no secrets: API keys are named by the
+# environment variable that holds them, and the database URL comes from
+# CUSTOMSVN_DATABASE_URL. An unknown key (such as api_key) is an error.
+
+listen: 127.0.0.1:8080
+
+# luatdo data directory; empty means $LUATDO_DATA.
+data: ""
+# customsvn prep output; empty means <data>/customsvn/prep.
+prep: ""
+
+# Embedding models to benchmark. Each is embedded with
+#   customsvn embed -model <name>
+# and chosen per search in Retrieval Testing. A model whose key variable is
+# empty is skipped at startup, and hybrid search falls back to BM25.
+embedding:
+  - name: openai-3-large-1024
+    provider: openai            # any OpenAI-compatible /embeddings endpoint
+    model: text-embedding-3-large
+    dims: 1024
+    api_key_env: OPENAI_API_KEY
+    batch: 64
+    rpm: 300
+  - name: voyage-3-large
+    provider: voyage
+    model: voyage-3-large
+    dims: 1024
+    api_key_env: VOYAGE_API_KEY
+    rpm: 300
+  - name: gemini-embedding-001
+    provider: gemini
+    model: gemini-embedding-001
+    dims: 768
+    api_key_env: GEMINI_API_KEY
+    batch: 100
+    rpm: 100
+
+# Optional reranker (Cohere, Jina or Voyage /rerank). Off by default in every
+# search until a Retrieval Testing run shows it helps.
+# rerank:
+#   provider: cohere
+#   model: rerank-v3.5
+#   api_key_env: COHERE_API_KEY
