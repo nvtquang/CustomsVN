@@ -1,0 +1,43 @@
+# CustomsVN with PostgreSQL 17 + pgvector.
+#
+#   cp .env.example .env              # set CUSTOMSVN_MASTER_KEY (openssl rand -base64 32)
+#   docker compose up -d --build
+#   docker compose run --rm app bootstrap    # first data load: several GB, about an hour
+#   open http://localhost:8080 and set a model in Settings › LLM
+#
+# The app reads its data from the customsvn-data volume. To reuse a luatdo data
+# directory you already have, replace that volume with a bind mount.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: customsvn
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-customsvn}
+      POSTGRES_DB: customsvn
+    volumes:
+      - customsvn-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customsvn"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CUSTOMSVN_DATABASE_URL: postgres://customsvn:${POSTGRES_PASSWORD:-customsvn}@db:5432/customsvn?sslmode=disable
+      CUSTOMSVN_MASTER_KEY: ${CUSTOMSVN_MASTER_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - customsvn-data:/data
+    ports:
+      - "127.0.0.1:${CUSTOMSVN_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  customsvn-pg:
+  customsvn-data:

@@ -1,0 +1,9 @@
+.git
+bin
+web/node_modules
+web/dist
+prototypes
+.playwright-mcp
+customsvn.yaml
+.env
+*.exe
