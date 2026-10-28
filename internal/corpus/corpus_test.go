@@ -347,3 +347,76 @@ func TestTablesSkipLayoutAndPlaceUnderTheirProvision(t *testing.T) {
 		t.Errorf("text %q", c.Text)
 	}
 }
+
+func TestTitleLinks(t *testing.T) {
+	got := TitleLinks("Nghị định số 59/2018/NĐ-CP Sửa đổi, bổ sung một số điều của Nghị định số 08/2015/NĐ-CP ngày 21 tháng 01 năm 2015 của Chính phủ quy định chi tiết và biện pháp thi hành Luật Hải quan")
+	if len(got) != 1 || got[0].Number != "08/2015/NĐ-CP" || got[0].Relation != RelAmends {
+		t.Errorf("got %+v", got)
+	}
+	// The numbers after "hướng dẫn" are what the circular implements.
+	got = TitleLinks("Thông tư số 13/2023/TT-BTC hướng dẫn thi hành Nghị định số 49/2022/NĐ-CP sửa đổi, bổ sung một số điều của Nghị định số 209/2013/NĐ-CP và sửa đổi bổ sung Thông tư số 80/2021/TT-BTC")
+	if len(got) != 0 {
+		t.Errorf("got %+v", got)
+	}
+	if got := TitleLinks("Luật Hải quan"); got != nil {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestTreeParentChildMakesEveryClauseAChunk(t *testing.T) {
+	d := "vn:law:2020:1-2020-tt-btc"
+	ps := []law.Provision{
+		{ID: d + ":article-5", Kind: "article", Number: "5", Text: "Mở đầu"},
+		{ID: d + ":article-5:clause-1", Kind: "clause", Number: "1", Text: "ngắn"},
+		{ID: d + ":article-5:clause-2", Kind: "clause", Number: "2", Text: "cũng ngắn"},
+		{ID: d + ":article-6", Kind: "article", Number: "6", Text: "Không có khoản"},
+	}
+	ch, out := collect(t)
+	ch.Chunking = Chunking{Mode: ChunkParentChild}
+	if err := ch.Tree(&Meta{ID: d}, ps, &Source{Kind: SourceOriginal, Tier: Tier2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{d + ":article-5", d + ":article-5:clause-1", d + ":article-5:clause-2", d + ":article-6"}
+	if !slices.Equal(ids(*out), want) {
+		t.Errorf("got %v, want %v", ids(*out), want)
+	}
+}
+
+func TestTreeGeneralSplitsAtTheConfiguredLength(t *testing.T) {
+	d := "vn:law:2020:1-2020-tt-btc"
+	text := strings.Repeat("chữ ", 300) // 1,200 characters
+	ps := []law.Provision{
+		{ID: d + ":article-5", Kind: "article", Number: "5"},
+		{ID: d + ":article-5:clause-1", Kind: "clause", Number: "1", Text: text},
+		{ID: d + ":article-5:clause-2", Kind: "clause", Number: "2", Text: text},
+	}
+	for _, c := range []struct {
+		max  int
+		want int
+	}{{0, 1}, {2000, 2}} {
+		ch, out := collect(t)
+		ch.Chunking = Chunking{MaxLength: c.max}
+		if err := ch.Tree(&Meta{ID: d}, ps, &Source{Kind: SourceOriginal, Tier: Tier2}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if len(*out) != c.want {
+			t.Errorf("max %d: got %v", c.max, ids(*out))
+		}
+	}
+}
+
+func TestChunkingValidate(t *testing.T) {
+	for _, c := range []struct {
+		in Chunking
+		ok bool
+	}{
+		{Chunking{}, true},
+		{Chunking{Mode: ChunkParentChild, ParentLength: 3000}, true},
+		{Chunking{Mode: "paragraph"}, false},
+		{Chunking{MaxLength: 200}, false},
+	} {
+		if err := c.in.Validate(); (err == nil) != c.ok {
+			t.Errorf("%+v: %v", c.in, err)
+		}
+	}
+}

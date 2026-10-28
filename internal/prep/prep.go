@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/tamnd/luatdo/store"
+
+	"github.com/nvtquang/CustomsVN/internal/corpus"
 )
 
 // Steps, in the order they run.
@@ -51,6 +53,8 @@ type Options struct {
 	// dataset's legacy_content config (see NOTICE). The CLI turns it on; a
 	// data directory without the legacy files is noted and skipped.
 	Legacy bool
+	// Chunking is how documents are cut; the zero value is the general mode.
+	Chunking corpus.Chunking
 	// Log receives progress lines. Nil means none.
 	Log io.Writer
 }

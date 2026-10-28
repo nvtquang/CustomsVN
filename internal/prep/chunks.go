@@ -48,6 +48,7 @@ func (r *run) chunks() error {
 		seen[c.ID] = true
 		return chunks.add(c)
 	})
+	ch.Chunking = r.Chunking.Fill()
 	stats := ch.Stats
 
 	tables, err := r.loadTables()
@@ -200,7 +201,7 @@ func (r *run) chunks() error {
 	if err != nil {
 		return err
 	}
-	return r.summary(StepChunks, map[string]any{"as_of": r.AsOf, "counts": stats,
+	return r.summary(StepChunks, map[string]any{"as_of": r.AsOf, "counts": stats, "chunking": ch.Chunking,
 		"chunks_sha256": chunksHash, "documents_sha256": manifestHash})
 }
 

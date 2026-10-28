@@ -82,10 +82,71 @@ type Chunk struct {
 	AmendmentNotes []string `json:"amendment_notes,omitempty"`
 }
 
+// Chunking modes.
+const (
+	// ChunkGeneral is an article per chunk, split at its clauses past
+	// MaxLength characters.
+	ChunkGeneral = "general"
+	// ChunkParentChild makes every clause of an article its own chunk, the
+	// child a search matches; a search puts the article, the parent, back
+	// together around it for the model to read.
+	ChunkParentChild = "parent_child"
+)
+
+// Chunking is how documents are cut, set on the knowledge screen. Prep
+// applies it, so a change needs a new prep and ingest. The separators are
+// not a setting: a chunk follows the article and clause structure, because
+// every answer cites an article, clause or point.
+type Chunking struct {
+	Mode string `json:"mode"`
+	// MaxLength is the length past which a general article is split.
+	MaxLength int `json:"max_length,omitempty"`
+	// ParentLength caps the article put back together around a child, in
+	// characters.
+	ParentLength int `json:"parent_length,omitempty"`
+}
+
+// Chunking defaults.
+const (
+	DefaultParentLength = 6000
+	MinChunkLength      = 1000
+	MaxChunkLength      = 12000
+)
+
+// Fill returns c with its defaults set.
+func (c Chunking) Fill() Chunking {
+	if c.Mode == "" {
+		c.Mode = ChunkGeneral
+	}
+	if c.MaxLength <= 0 {
+		c.MaxLength = MaxArticle
+	}
+	if c.ParentLength <= 0 {
+		c.ParentLength = DefaultParentLength
+	}
+	return c
+}
+
+// Validate says what is wrong with c, if anything.
+func (c Chunking) Validate() error {
+	c = c.Fill()
+	if c.Mode != ChunkGeneral && c.Mode != ChunkParentChild {
+		return fmt.Errorf("chunking mode must be %s or %s", ChunkGeneral, ChunkParentChild)
+	}
+	for _, n := range []int{c.MaxLength, c.ParentLength} {
+		if n < MinChunkLength || n > MaxChunkLength {
+			return fmt.Errorf("chunk lengths must be %d-%d characters", MinChunkLength, MaxChunkLength)
+		}
+	}
+	return nil
+}
+
 // Chunker turns documents into chunks and counts what it did.
 type Chunker struct {
 	Emit  func(Chunk) error
 	Stats map[string]int
+	// Chunking is how to cut; the zero value is the general mode.
+	Chunking Chunking
 }
 
 // NewChunker returns a chunker that hands every chunk to emit.
@@ -190,10 +251,11 @@ func (c *Chunker) Tree(doc *Meta, provisions []law.Provision, src *Source, notes
 			}
 		}
 	}
+	opts := c.Chunking.Fill()
 	for _, top := range tops {
 		kids := under(provisions, top.ID, tops)
 		whole := joinText(top.Text, "", kids)
-		if utf8.RuneCountInString(whole) <= MaxArticle {
+		if len(kids) == 0 || opts.Mode != ChunkParentChild && utf8.RuneCountInString(whole) <= opts.MaxLength {
 			if err := c.emit(doc, src, top.ID, pathOf(top.ID), whole, refs(whole)); err != nil {
 				return err
 			}
