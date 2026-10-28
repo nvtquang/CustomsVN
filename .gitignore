@@ -19,6 +19,9 @@ go.work.sum
 /web/node_modules/
 /web/dist/*
 !/web/dist/.gitkeep
+/web/e2e/.auth/
+/web/test-results/
+/web/playwright-report/
 
 # editors and OS
 .vscode/
@@ -32,3 +35,7 @@ __pycache__/
 
 # browser automation scratch
 .playwright-mcp/
+
+# local compose overrides
+docker-compose.override.yml
+/web/.tanstack/
