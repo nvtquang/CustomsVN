@@ -35,7 +35,7 @@ Cơ sở dữ liệu cho phát triển: `docker compose -f deploy/docker-compose
 - Bố cục theo `docs/PLAN.md`: `cmd/customsvn`, `internal/...`, `web/`, `migrations/`.
 - Theo phong cách của luatdo: comment giải thích vì sao, lỗi được trả về kèm ngữ cảnh.
 - Code, định danh và commit message viết bằng tiếng Anh; chữ trên giao diện là tiếng Việt qua khóa i18n.
-- luatdo được import như Go module và pin theo commit. Lỗi của luatdo sửa ở upstream bằng PR; muốn thử bản sửa chưa merge thì dùng `go.work` trỏ tới bản clone (đã có trong `.gitignore`).
+- luatdo được import như Go module và pin theo commit. Dự án không gửi PR lên luatdo: lỗi của luatdo được xử lý trong CustomsVN, ghi chú ngay tại chỗ xử lý.
 - Thay đổi ở `customsvn prep` phải ghi số liệu trước và sau vào [docs/corpus.md](docs/corpus.md).
 
 ## Pull request

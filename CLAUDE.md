@@ -6,7 +6,7 @@ Open-source (MIT) AI chatbot and agent for Vietnamese customs law. Go backend bu
 
 ## Current phase
 
-Phase 2 — RAG chatbot and chat UI: built and checked end to end against a fake model (`docs/chat.md`). Still to measure with real API keys: answer citation rate and p95 time to the first verified claim, and the Phase 1 embedding benchmark. Decisions of 2026-10-27: legacy_content on by default; no PRs to luatdo (fix things in CustomsVN); no tariff source (rate questions are refused); API keys come later. Next: Phase 3 (agent and customs tools).
+Phase 4 — admin UI and polish: built; Go tests and 13 Playwright tests pass against a fake model (`docs/admin.md`). Left for Phase 4: the experts' week on the beta, every 👎 handled in the review screen. Still waiting on real API keys and the experts' gold set: the embedding benchmark (Phase 1), answer citation rate and time to first claim (Phase 2), the release thresholds (Phase 3). Decisions of 2026-10-27: legacy_content on by default; no PRs to luatdo; no tariff source (rate questions are refused). Settings reworked 2026-10-28 (`docs/admin.md`): one settings window, models by type (chat, embedding, rerank), and a knowledge page with chunking (general or parent-child), index method, top K and score threshold; the defaults keep retrieval as it was. Next: Phase 5 (open-source v1.0 release).
 
 ## Commands
 
@@ -19,11 +19,14 @@ docker compose -f deploy/docker-compose.yml up -d   # dev Postgres + pgvector on
 go run ./cmd/customsvn ingest                    # needs CUSTOMSVN_DATABASE_URL
 go run ./cmd/customsvn eval -goldset goldsets/provisional.csv
 go run ./cmd/customsvn serve
+go run ./cmd/customsvn mcp                       # MCP over stdio
+go run ./cmd/customsvn user passwd -email admin  # reset a password
 docker compose up -d --build && docker compose run --rm app bootstrap   # whole app
 cd web && npm ci && npm run build                # then rebuild the binary to embed the UI
+cd web && E2E_ADMIN_PASSWORD=... npm run e2e    # Playwright, against a test server (web/e2e/README.md)
 ```
 
-On the maintainer's machine Go is at `D:\Tools\go\bin` (not on PATH), and Windows Application Control blocks freshly built binaries and test executables; build and vet locally, but run tests and the binary in `golang:1.27` under Docker (mount the repo at /src and the data at /data; the database is at host.docker.internal:55432).
+On the maintainer's machine Windows Application Control blocks the Go compiler and every freshly built binary, so all `go` commands (vet, build, test, run) go through `golang:1.27` under Docker: mount the repo at /src and the data at /data; the database is at host.docker.internal:55432. `gofmt` at `D:\Tools\go\bin` still runs locally.
 
 Data lives outside the repo. Set `LUATDO_DATA` (on the maintainer's machine `D:\DevCache\luatdo`). Never commit data, embeddings or API keys.
 

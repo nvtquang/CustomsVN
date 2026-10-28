@@ -327,22 +327,24 @@ Mục tiêu: agent tự chọn công cụ, trả lời câu hỏi nhiều bướ
 
 Backend:
 
-- [ ] Intent router (model rẻ); vòng lặp tool tối đa 6 bước; trace
-- [ ] Công cụ `resolve_reference`, `get_document_status`, `get_amendments`, `lookup_hs`, `graph_query`
-- [ ] Trả lời theo mốc ngày; hỏi lại khi thiếu loại hình, xuất xứ, đối tượng
-- [ ] Nạp `hs_codes`; tìm theo mã và mô tả (trigram + vector)
-- [ ] MCP server (stdio và HTTP); `/v1/chat/completions`
-- [ ] Chạy gold set chuyên gia qua truy xuất và trả lời; chốt ngưỡng phát hành theo baseline
+- [x] Intent router (model rẻ); vòng lặp tool tối đa 6 bước; trace
+- [x] Công cụ `resolve_reference`, `get_document_status`, `get_amendments`, `lookup_hs`, `graph_query` — cùng `search_legal`, `get_provision`; trạng thái và quan hệ đọc từ bảng `registry` (128 nghìn văn bản) và đồ thị quan hệ chính thức của vbpl.vn, bổ sung cạnh suy từ tiêu đề
+- [x] Trả lời theo mốc ngày; hỏi lại khi thiếu loại hình, xuất xứ, đối tượng
+- [x] Nạp `hs_codes`; tìm theo mã và mô tả (trigram + vector) — vector chạy khi đã `embed -target hs` (chờ API key)
+- [x] MCP server (stdio và HTTP); `/v1/chat/completions`
+- [ ] Chạy gold set chuyên gia qua truy xuất và trả lời; chốt ngưỡng phát hành theo baseline — chờ gold set chuyên gia và API key
 
 Web UI:
 
-- [ ] Các bước agent dạng thu gọn
-- [ ] Tra cứu HS: tìm, cây phân cấp, chú giải chương, song ngữ, link văn bản nguồn
-- [ ] Thẻ trong chat: trạng thái văn bản, chuỗi sửa đổi dạng dòng thời gian, kết quả HS
-- [ ] Chọn mốc ngày cho hội thoại
-- [ ] Trang hướng dẫn kết nối MCP và API
+- [x] Các bước agent dạng thu gọn
+- [x] Tra cứu HS: tìm, cây phân cấp, chú giải chương, song ngữ, link văn bản nguồn — chưa có chú giải chương: dữ liệu nguồn không tách được phần chú giải
+- [x] Thẻ trong chat: trạng thái văn bản, chuỗi sửa đổi dạng dòng thời gian, kết quả HS
+- [x] Chọn mốc ngày cho hội thoại
+- [x] Trang hướng dẫn kết nối MCP và API
 
 Hoàn thành khi: đạt ngưỡng gold set (đề xuất recall@10 ≥ 0,85, trích dẫn đúng ≥ 0,95, chốt lại sau baseline).
+
+Kết quả (2026-10-28): đủ chức năng, kiểm thử đầu-cuối với model giả và test tự động ([agent.md](agent.md)). Chưa đo ngưỡng: cần gold set chuyên gia và API key.
 
 ## Phase 4 — Web UI quản trị và hoàn thiện sản phẩm (tuần 15–17)
 
@@ -350,24 +352,26 @@ Mục tiêu: bản beta cho nhóm chuyên gia, đủ công cụ quản trị d�
 
 Backend:
 
-- [ ] Đăng nhập session cookie; mặc định một admin; tùy chọn nhiều người dùng, vai trò admin/user
-- [ ] Giới hạn tốc độ; ghi token và chi phí vào `usage`
-- [ ] Job nền cho ingest/embed: hàng đợi, tiến độ, log
-- [ ] Chống prompt injection: nội dung văn bản là dữ liệu, không phải chỉ dẫn; bộ test tấn công mẫu
-- [ ] Xuất/nhập cấu hình (không kèm secret)
-- [ ] Đánh giá câu trả lời end-to-end: trung thành nguồn, trích dẫn đúng, từ chối đúng lúc
+- [x] Đăng nhập session cookie; mặc định một admin; tùy chọn nhiều người dùng, vai trò admin/user
+- [x] Giới hạn tốc độ; ghi token và chi phí vào `usage`
+- [x] Job nền cho ingest/embed: hàng đợi, tiến độ, log — thêm cả prep
+- [x] Chống prompt injection: nội dung văn bản là dữ liệu, không phải chỉ dẫn; bộ test tấn công mẫu — rào câu hỏi và nguồn, loại nhận định có link/ảnh/HTML; `internal/answer/injection_test.go`, `goldsets/injection.csv`
+- [x] Xuất/nhập cấu hình (không kèm secret)
+- [x] Đánh giá câu trả lời end-to-end: trung thành nguồn, trích dẫn đúng, từ chối đúng lúc — chấm bằng code, không dùng model làm giám khảo
 
 Web UI:
 
-- [ ] Quản trị dữ liệu: phiên bản corpus, thống kê, độ phủ, chạy ingest/embed, log
-- [ ] Feedback và review: danh sách 👎, xem lại hội thoại kèm trace, gắn nhãn, chuyển thành gold item
-- [ ] `/lab/answers`: đánh giá câu trả lời, so sánh cấu hình model
-- [ ] Dashboard: số câu hỏi, tỷ lệ từ chối, độ trễ, chi phí theo ngày
-- [ ] Đăng nhập, quản lý người dùng
-- [ ] Hoàn thiện UX: mobile, phím tắt, accessibility, trạng thái loading
-- [ ] Playwright cho các luồng chính
+- [x] Quản trị dữ liệu: phiên bản corpus, thống kê, độ phủ, chạy ingest/embed, log
+- [x] Feedback và review: danh sách 👎, xem lại hội thoại kèm trace, gắn nhãn, chuyển thành gold item
+- [x] `/lab/answers`: đánh giá câu trả lời, so sánh cấu hình model
+- [x] Dashboard: số câu hỏi, tỷ lệ từ chối, độ trễ, chi phí theo ngày
+- [x] Đăng nhập, quản lý người dùng
+- [x] Hoàn thiện UX: mobile, phím tắt, accessibility, trạng thái loading
+- [x] Playwright cho các luồng chính — 13 test, chạy với máy chủ thử và model giả (`web/e2e`)
 
 Hoàn thành khi: chuyên gia dùng một tuần, mọi 👎 được xử lý qua màn hình review; Playwright pass.
+
+Kết quả (2026-10-28): đủ chức năng ([admin.md](admin.md)); Playwright pass 13/13 với model giả. Còn lại: tuần dùng thử của chuyên gia.
 
 ## Phase 5 — Phát hành open source v1.0 (tuần 18–19)
 
