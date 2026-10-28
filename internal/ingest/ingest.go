@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tamnd/luatdo/cite"
 	"github.com/tamnd/luatdo/law"
+	"github.com/tamnd/luatdo/parse"
 	"github.com/tamnd/luatdo/store"
 
 	"github.com/nvtquang/CustomsVN/internal/corpus"
@@ -48,6 +49,7 @@ type Result struct {
 	Removed   int   `json:"removed"`
 	Edges     int   `json:"edges"`
 	HSCodes   int   `json:"hs_codes"`
+	Registry  int   `json:"registry"`
 }
 
 type docRow struct {
@@ -71,6 +73,13 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (*Result, error)
 			fmt.Fprintf(opts.Log, f+"\n", a...)
 		}
 	}
+	// Each phase says how long it took, so a job log shows where an ingest
+	// is, and a canceled job stops between phases rather than at the end.
+	started := time.Now()
+	phase := func(name string) error {
+		logf("ingest: %s (%s)", name, time.Since(started).Round(time.Second))
+		return ctx.Err()
+	}
 	var summary struct {
 		AsOf         string `json:"as_of"`
 		ChunksSHA256 string `json:"chunks_sha256"`
@@ -83,11 +92,13 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
-	docs, err := documents(opts, chunks)
+	docs, err := documents(ctx, opts, chunks)
 	if err != nil {
 		return nil, err
 	}
-	logf("ingest: %d documents, %d chunks read", len(docs), len(chunks))
+	if err := phase(fmt.Sprintf("%d documents, %d chunks read", len(docs), len(chunks))); err != nil {
+		return nil, err
+	}
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -170,10 +181,25 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (*Result, error)
 			res.Version, len(docWrite), len(docRemove), res.Added, res.Changed, res.Removed)
 	}
 
+	if err := phase("documents and chunks written"); err != nil {
+		return nil, err
+	}
 	if res.Edges, err = writeEdges(ctx, tx, opts, docs); err != nil {
 		return nil, err
 	}
+	if err := phase(fmt.Sprintf("%d relations written", res.Edges)); err != nil {
+		return nil, err
+	}
 	if res.HSCodes, err = writeHS(ctx, tx, opts); err != nil {
+		return nil, err
+	}
+	if err := phase(fmt.Sprintf("%d HS lines written", res.HSCodes)); err != nil {
+		return nil, err
+	}
+	if res.Registry, err = writeRegistry(ctx, tx, opts, docs); err != nil {
+		return nil, err
+	}
+	if err := phase(fmt.Sprintf("%d registry documents written", res.Registry)); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -195,7 +221,7 @@ func readChunks(path string) ([]corpus.Chunk, error) {
 
 // documents gathers every document a chunk belongs to, with its metadata and
 // provision tree.
-func documents(opts Options, chunks []corpus.Chunk) ([]*docRow, error) {
+func documents(ctx context.Context, opts Options, chunks []corpus.Chunk) ([]*docRow, error) {
 	first := map[string]*corpus.Chunk{}
 	var order []string
 	for i := range chunks {
@@ -219,6 +245,9 @@ func documents(opts Options, chunks []corpus.Chunk) ([]*docRow, error) {
 			return nil, err
 		}
 		for _, p := range paths {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			var x prep.Parsed
 			if err := store.ReadJSON(p, &x); err != nil {
 				return nil, fmt.Errorf("%s: %w", p, err)
@@ -231,6 +260,11 @@ func documents(opts Options, chunks []corpus.Chunk) ([]*docRow, error) {
 
 	out := make([]*docRow, 0, len(order))
 	for _, id := range order {
+		// Reading every store document takes most of a minute; a canceled
+		// job should not wait for it.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		c := first[id]
 		d := &docRow{ID: id, Tier: c.Tier, SourceKind: c.Source.Kind, Subjects: nonNil(c.Subjects), AmendedBy: []string{}}
 		var m corpus.Meta
@@ -373,17 +407,70 @@ func upsert(table string, cols []string) string {
 	return q
 }
 
-// writeEdges replaces the link graph among and out of corpus documents:
-// luatdo's citation and amendment links, and each consolidated text's link to
-// its base.
+// writeEdges replaces the link graph: vbpl.vn's official relations between
+// all documents (so an amending act outside the corpus still appears on the
+// timeline of the act it amended), each consolidated text's link to its base,
+// and the citations luatdo found in the text of corpus documents.
 func writeEdges(ctx context.Context, tx pgx.Tx, opts Options, docs []*docRow) (int, error) {
 	if _, err := tx.Exec(ctx, `TRUNCATE edges`); err != nil {
 		return 0, err
 	}
 	var rows [][]any
+	numbers := map[string]string{}
 	for _, d := range docs {
+		numbers[d.ID] = d.OfficialNumber
 		if d.Consolidates != nil {
-			rows = append(rows, []any{d.ID, nil, *d.Consolidates, d.OfficialNumber, "consolidates", "vbhn"})
+			rows = append(rows, []any{d.ID, nil, *d.Consolidates, d.OfficialNumber, "cites", "vbhn", corpus.RelConsolidates, "Hợp nhất"})
+		}
+	}
+	rels, _, err := parse.Th1nhng0Relations(filepath.Join(opts.Data, "raw", "th1nhng0", prep.Revision))
+	if err != nil {
+		return 0, fmt.Errorf("official relations: %w", err)
+	}
+	have := map[string]bool{} // from|to of every acting edge already known
+	for _, r := range rels {
+		rel := corpus.Relation(r.Label)
+		rows = append(rows, []any{r.FromDoc, nil, r.ToDoc, numbers[r.ToDoc], r.Kind, "vbpl", rel, r.Label})
+		if corpus.Acts(rel) {
+			have[r.FromDoc+"|"+r.ToDoc] = true
+		}
+	}
+	// vbpl.vn's relation table misses links its own titles state: a decree
+	// titled "Sửa đổi, bổ sung một số điều của Nghị định số 08/2015/NĐ-CP"
+	// amends 08/2015 whether or not the table says so. Those links are read
+	// from the titles, and from the "được sửa đổi, bổ sung bởi" list of each
+	// consolidated text, and added only where vbpl.vn has none.
+	var entries []prep.Entry
+	if err := eachJSONL(filepath.Join(opts.Prep, "domain.jsonl"), func(e prep.Entry) { entries = append(entries, e) }); err != nil {
+		return 0, err
+	}
+	known := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		known[e.ID] = true
+	}
+	add := func(from, to, number, rel, method, label string) {
+		if from == to || !known[to] && !isDoc(docs, to) || have[from+"|"+to] {
+			return
+		}
+		have[from+"|"+to] = true
+		rows = append(rows, []any{from, nil, to, number, "amends", method, rel, label})
+	}
+	for _, e := range entries {
+		for _, l := range corpus.TitleLinks(e.Title) {
+			add(e.ID, corpus.StoreID(l.Number), l.Number, l.Relation, "title", l.Phrase)
+		}
+	}
+	for _, d := range docs {
+		if d.Consolidates == nil {
+			continue
+		}
+		for _, n := range d.AmendedBy {
+			add(corpus.StoreID(n), *d.Consolidates, numbers[*d.Consolidates], corpus.RelAmends, "vbhn", "được sửa đổi, bổ sung bởi")
+		}
+	}
+	for _, d := range docs {
+		if err := ctx.Err(); err != nil {
+			return 0, err
 		}
 		if d.SourceKind == corpus.SourceConsolidated {
 			continue
@@ -400,12 +487,58 @@ func writeEdges(ctx context.Context, tx pgx.Tx, opts Options, docs []*docRow) (i
 			return 0, fmt.Errorf("citations of %s: %w", d.ID, err)
 		}
 		for _, l := range links {
-			rows = append(rows, []any{l.FromDoc, nullable(l.FromProvision), nullable(l.ToDoc), l.ToNumber, l.Kind, l.Method})
+			// Official links are already in, from the relations above.
+			if l.Method == "official" {
+				continue
+			}
+			rows = append(rows, []any{l.FromDoc, nullable(l.FromProvision), nullable(l.ToDoc), l.ToNumber, l.Kind, l.Method, "", ""})
 		}
 	}
-	_, err := tx.CopyFrom(ctx, pgx.Identifier{"edges"}, []string{"from_doc", "from_provision", "to_doc", "to_number", "kind", "method"},
+	_, err = tx.CopyFrom(ctx, pgx.Identifier{"edges"}, []string{"from_doc", "from_provision", "to_doc", "to_number", "kind", "method", "relation", "label"},
 		pgx.CopyFromRows(rows))
 	return len(rows), err
+}
+
+func isDoc(docs []*docRow, id string) bool {
+	for _, d := range docs {
+		if d.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// writeRegistry replaces the status table with every store document and
+// every consolidated text in the corpus.
+func writeRegistry(ctx context.Context, tx pgx.Tx, opts Options, docs []*docRow) (int, error) {
+	if _, err := tx.Exec(ctx, `TRUNCATE registry`); err != nil {
+		return 0, err
+	}
+	var rows [][]any
+	seen := map[string]bool{}
+	if err := eachJSONL(filepath.Join(opts.Prep, "domain.jsonl"), func(e prep.Entry) {
+		seen[e.ID] = true
+		rows = append(rows, []any{e.ID, e.OfficialNumber, corpus.NormNumber(e.OfficialNumber), e.DocType, e.Title, e.IssuingBody,
+			date(e.SignedOn), date(e.EffectiveFrom), date(e.ExpiredOn), e.ForceStatus, e.Status, e.Tier, e.SourceURL})
+	}); err != nil {
+		return 0, err
+	}
+	for _, d := range docs {
+		if seen[d.ID] {
+			continue
+		}
+		rows = append(rows, []any{d.ID, d.OfficialNumber, d.NumberNorm, d.DocType, d.Title, d.IssuingBody,
+			d.SignedOn, d.EffectiveFrom, d.ExpiredOn, d.ForceStatus, d.Status, d.Tier, d.SourceURL})
+	}
+	_, err := tx.CopyFrom(ctx, pgx.Identifier{"registry"}, []string{"id", "official_number", "number_norm", "doc_type", "title", "issuing_body",
+		"signed_on", "effective_from", "expired_on", "force_status", "status", "tier", "source_url"}, pgx.CopyFromRows(rows))
+	return len(rows), err
+}
+
+// HSHash identifies an HS line by what it says, so its embedding survives a
+// re-ingest that renumbers the rows.
+func HSHash(r corpus.HSRow) string {
+	return hashOf([]any{r.Code, r.Level, r.DescriptionVI, r.DescriptionEN})
 }
 
 func writeHS(ctx context.Context, tx pgx.Tx, opts Options) (int, error) {
@@ -417,10 +550,10 @@ func writeHS(ctx context.Context, tx pgx.Tx, opts Options) (int, error) {
 		return 0, err
 	}
 	_, err = tx.CopyFrom(ctx, pgx.Identifier{"hs_codes"},
-		[]string{"code", "level", "description_vi", "description_en", "unit", "chapter", "parent_code", "parent_description", "source_doc", "position"},
+		[]string{"code", "level", "description_vi", "description_en", "unit", "chapter", "parent_code", "parent_description", "source_doc", "position", "content_hash"},
 		pgx.CopyFromSlice(len(rows), func(i int) ([]any, error) {
 			r := rows[i]
-			return []any{r.Code, r.Level, r.DescriptionVI, r.DescriptionEN, r.Unit, r.Chapter, r.ParentCode, r.ParentDescription, prep.HSDocID, i}, nil
+			return []any{r.Code, r.Level, r.DescriptionVI, r.DescriptionEN, r.Unit, r.Chapter, r.ParentCode, r.ParentDescription, prep.HSDocID, i, HSHash(r)}, nil
 		}))
 	return len(rows), err
 }

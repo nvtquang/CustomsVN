@@ -71,6 +71,7 @@ type Corpus struct {
 	Chunks  map[string]*Chunk
 	byDoc   map[string][]*Chunk
 	byTail  map[string]map[string]*Chunk // doc -> tail -> chunk
+	family  map[string][]*Chunk          // article -> its chunks, in document order
 	numbers map[string][]*Doc            // normalised official number -> docs
 	names   map[string][]*Doc            // folded law name -> docs
 	index   *retrieve.Index
@@ -79,7 +80,7 @@ type Corpus struct {
 // NewCorpus indexes documents and chunks.
 func NewCorpus(version int64, docs []Doc, chunks []Chunk) *Corpus {
 	c := &Corpus{Version: version, Docs: map[string]*Doc{}, Chunks: map[string]*Chunk{}, byDoc: map[string][]*Chunk{},
-		byTail: map[string]map[string]*Chunk{}, numbers: map[string][]*Doc{}, names: map[string][]*Doc{}}
+		byTail: map[string]map[string]*Chunk{}, family: map[string][]*Chunk{}, numbers: map[string][]*Doc{}, names: map[string][]*Doc{}}
 	for i := range docs {
 		d := &docs[i]
 		c.Docs[d.ID] = d
@@ -106,6 +107,9 @@ func NewCorpus(version int64, docs []Doc, chunks []Chunk) *Corpus {
 		}
 		if _, ok := c.byTail[ch.DocID][ch.Tail()]; !ok {
 			c.byTail[ch.DocID][ch.Tail()] = ch
+		}
+		if k := parentKey(ch.ID); k != "" {
+			c.family[k] = append(c.family[k], ch)
 		}
 		ld := ldocs[ch.DocID]
 		if ld == nil {
@@ -344,4 +348,22 @@ func (c *Corpus) Covers(ch *Chunk, provisionID string) bool {
 	}
 	want := strings.TrimPrefix(provisionID, doc+":")
 	return tail == want || strings.HasPrefix(want, tail+":") || strings.HasPrefix(tail, want+":")
+}
+
+// parentKey is the article a chunk belongs to: its identifier up to the last
+// article, "…:article-18" for "…:article-18:clause-2" and for the article
+// itself. A chunk outside any article, a document's table or a piece of a
+// text with no structure, has none.
+func parentKey(id string) string {
+	if i := strings.Index(id, "#"); i >= 0 {
+		id = id[:i]
+	}
+	i := strings.LastIndex(id, ":article-")
+	if i < 0 {
+		return ""
+	}
+	if j := strings.Index(id[i+1:], ":"); j >= 0 {
+		return id[:i+1+j]
+	}
+	return id
 }

@@ -10,13 +10,22 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nvtquang/CustomsVN/internal/answer"
+	"github.com/nvtquang/CustomsVN/internal/llm"
+	"github.com/nvtquang/CustomsVN/internal/tools"
 )
 
-// Store is the conversation store.
-type Store struct{ Pool *pgxpool.Pool }
+// Store is the conversation store. Conversations belong to the user who
+// started them; an owner of 0 stands for "any", for admins reviewing and for
+// callers with the API token.
+type Store struct {
+	Pool *pgxpool.Pool
+	// Cost prices one call's usage; nil records no cost.
+	Cost func(llm.Usage) float64
+}
 
 // Conversation is a conversation as the history sidebar lists it.
 type Conversation struct {
@@ -36,6 +45,10 @@ type Message struct {
 	Refused   bool            `json:"refused"`
 	Claims    []answer.Claim  `json:"claims,omitempty"`
 	Refusal   *answer.Refusal `json:"refusal,omitempty"`
+	Clarify   string          `json:"clarify,omitempty"`
+	Intent    *answer.Intent  `json:"intent,omitempty"`
+	Steps     []answer.Step   `json:"steps,omitempty"`
+	Cards     []tools.Card    `json:"cards,omitempty"`
 	Dropped   int             `json:"dropped,omitempty"`
 	AsOf      string          `json:"as_of_date,omitempty"`
 	Corpus    *int64          `json:"corpus_version,omitempty"`
@@ -50,15 +63,27 @@ var ErrNotFound = errors.New("not found")
 // titleLength bounds a title made from the first question.
 const titleLength = 80
 
-// Create starts a conversation titled after its first question.
-func (s *Store) Create(ctx context.Context, firstQuestion, asOf string) (int64, error) {
+// Owns returns ErrNotFound unless the conversation exists and belongs to
+// owner. Someone else's conversation is reported as missing, not forbidden,
+// so its existence is not given away.
+func (s *Store) Owns(ctx context.Context, conv, owner int64) error {
+	var ok bool
+	err := s.Pool.QueryRow(ctx, `SELECT $2::bigint = 0 OR coalesce(user_id = $2, false) FROM conversations WHERE id = $1`, conv, owner).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !ok) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// Create starts a conversation of owner titled after its first question.
+func (s *Store) Create(ctx context.Context, owner int64, firstQuestion, asOf string) (int64, error) {
 	title := strings.Join(strings.Fields(firstQuestion), " ")
 	if r := []rune(title); len(r) > titleLength {
 		title = string(r[:titleLength]) + "…"
 	}
 	var id int64
-	err := s.Pool.QueryRow(ctx, `INSERT INTO conversations (title, as_of_date) VALUES ($1, nullif($2, '')::date) RETURNING id`,
-		title, asOf).Scan(&id)
+	err := s.Pool.QueryRow(ctx, `INSERT INTO conversations (title, as_of_date, user_id) VALUES ($1, nullif($2, '')::date, nullif($3::bigint, 0)) RETURNING id`,
+		title, asOf, owner).Scan(&id)
 	return id, err
 }
 
@@ -85,6 +110,9 @@ type trace struct {
 	TimingMS     map[string]float64 `json:"timing_ms"`
 	FirstClaimMS float64            `json:"first_claim_ms,omitempty"`
 	Error        string             `json:"error,omitempty"`
+	Clarify      string             `json:"clarify,omitempty"`
+	Intent       *answer.Intent     `json:"intent,omitempty"`
+	Steps        []answer.Step      `json:"steps,omitempty"`
 }
 
 // AddAnswer stores an answer with its citations and usage. failure is the
@@ -96,16 +124,22 @@ func (s *Store) AddAnswer(ctx context.Context, conv int64, res *answer.Result, f
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	claims, _ := json.Marshal(res.Claims)
+	var cards []byte
+	if len(res.Cards) > 0 {
+		cards, _ = json.Marshal(res.Cards)
+	}
+	intent := res.Intent
 	tr, _ := json.Marshal(trace{Standalone: res.Standalone, Retrieved: res.Retrieved, Dropped: res.Dropped, Refusal: res.Refusal,
-		Provider: res.Provider, Model: res.Model, TimingMS: res.TimingMS, FirstClaimMS: res.FirstClaimMS, Error: failure})
+		Provider: res.Provider, Model: res.Model, TimingMS: res.TimingMS, FirstClaimMS: res.FirstClaimMS, Error: failure,
+		Clarify: res.Clarify, Intent: &intent, Steps: res.Steps})
 	var version *int64
 	if res.CorpusVersion > 0 {
 		version = &res.CorpusVersion
 	}
 	var id int64
-	err = tx.QueryRow(ctx, `INSERT INTO messages (conversation_id, role, content, refused, trace, claims, corpus_version, as_of_date)
-		VALUES ($1, 'assistant', $2, $3, $4, $5, $6, nullif($7, '')::date) RETURNING id`,
-		conv, res.Markdown(), res.Refusal != nil, tr, claims, version, res.AsOf).Scan(&id)
+	err = tx.QueryRow(ctx, `INSERT INTO messages (conversation_id, role, content, refused, trace, claims, cards, corpus_version, as_of_date)
+		VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7, nullif($8, '')::date) RETURNING id`,
+		conv, res.Markdown(), res.Refusal != nil, tr, claims, cards, version, res.AsOf).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -117,19 +151,51 @@ func (s *Store) AddAnswer(ctx context.Context, conv int64, res *answer.Result, f
 			}
 		}
 	}
-	for purpose, u := range res.Usage {
-		if u.InputTokens == 0 && u.OutputTokens == 0 {
-			continue
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (provider, model, purpose, input_tokens, output_tokens) VALUES ($1, $2, $3, $4, $5)`,
-			res.Provider, res.Model, purpose, u.InputTokens, u.OutputTokens); err != nil {
-			return 0, err
-		}
+	if err := s.usage(ctx, tx, `coalesce((SELECT user_id FROM conversations WHERE id = $2), nullif($1::bigint, 0))`, 0, conv, "", res); err != nil {
+		return 0, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE conversations SET updated_at = now() WHERE id = $1`, conv); err != nil {
 		return 0, err
 	}
 	return id, tx.Commit(ctx)
+}
+
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// usage records the token use of an answer, one row per purpose, priced
+// per call. who is the SQL for the user ($1 is the user, $2 the
+// conversation); prefix marks usage that is not a reader's question, such as
+// an evaluation run.
+func (s *Store) usage(ctx context.Context, db execer, who string, user, conv int64, prefix string, res *answer.Result) error {
+	for purpose, u := range res.Usage {
+		if u.InputTokens == 0 && u.OutputTokens == 0 {
+			continue
+		}
+		if u.Provider == "" {
+			u.Provider, u.Model = res.Provider, res.Model
+		}
+		cost := 0.0
+		if s.Cost != nil {
+			cost = s.Cost(u)
+		}
+		if _, err := db.Exec(ctx, `INSERT INTO usage (user_id, conversation_id, provider, model, purpose, input_tokens, output_tokens, cost_usd)
+			VALUES (`+who+`, nullif($2::bigint, 0), $3, $4, $5, $6, $7, $8)`,
+			user, conv, u.Provider, u.Model, prefix+purpose, u.InputTokens, u.OutputTokens, cost); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RecordUsage records the usage of an answer that is not stored as a
+// conversation: the OpenAI-compatible API, MCP, an evaluation run.
+func (s *Store) RecordUsage(ctx context.Context, user int64, prefix string, res *answer.Result) error {
+	if res == nil {
+		return nil
+	}
+	return s.usage(ctx, s.Pool, `nullif($1::bigint, 0)`, user, 0, prefix, res)
 }
 
 // History returns the turns of a conversation, oldest first.
@@ -177,12 +243,12 @@ func (s *Store) PopAnswer(ctx context.Context, conv int64) (string, string, erro
 
 // List returns conversations, newest first, optionally only those whose title
 // or messages contain q.
-func (s *Store) List(ctx context.Context, q string, limit int) ([]Conversation, error) {
+func (s *Store) List(ctx context.Context, owner int64, q string, limit int) ([]Conversation, error) {
 	sql := `SELECT c.id, c.title, coalesce(c.as_of_date::text, ''), count(m.id), c.created_at, c.updated_at
-		FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id`
-	args := []any{limit}
+		FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id WHERE c.user_id = $2`
+	args := []any{limit, owner}
 	if q = strings.TrimSpace(q); q != "" {
-		sql += ` WHERE c.title ILIKE $2 OR EXISTS (SELECT 1 FROM messages x WHERE x.conversation_id = c.id AND x.role = 'user' AND x.content ILIKE $2)`
+		sql += ` AND (c.title ILIKE $3 OR EXISTS (SELECT 1 FROM messages x WHERE x.conversation_id = c.id AND x.role = 'user' AND x.content ILIKE $3))`
 		args = append(args, "%"+strings.NewReplacer("%", `\%`, "_", `\_`).Replace(q)+"%")
 	}
 	sql += ` GROUP BY c.id ORDER BY c.updated_at DESC LIMIT $1`
@@ -213,7 +279,7 @@ func (s *Store) Get(ctx context.Context, id int64) (*Conversation, []Message, er
 	if err != nil {
 		return nil, nil, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT m.id, m.role, m.content, m.refused, m.claims, m.trace, coalesce(m.as_of_date::text, ''), m.corpus_version, m.created_at,
+	rows, err := s.Pool.Query(ctx, `SELECT m.id, m.role, m.content, m.refused, m.claims, m.cards, m.trace, coalesce(m.as_of_date::text, ''), m.corpus_version, m.created_at,
 		coalesce((SELECT rating FROM feedback f WHERE f.message_id = m.id ORDER BY f.id DESC LIMIT 1), 0)
 		FROM messages m WHERE m.conversation_id = $1 ORDER BY m.id`, id)
 	if err != nil {
@@ -223,23 +289,37 @@ func (s *Store) Get(ctx context.Context, id int64) (*Conversation, []Message, er
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		var claims, tr []byte
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &m.Refused, &claims, &tr, &m.AsOf, &m.Corpus, &m.CreatedAt, &m.Rating); err != nil {
+		var claims, cards, tr []byte
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &m.Refused, &claims, &cards, &tr, &m.AsOf, &m.Corpus, &m.CreatedAt, &m.Rating); err != nil {
 			return nil, nil, err
 		}
 		if len(claims) > 0 {
 			_ = json.Unmarshal(claims, &m.Claims)
 		}
+		if len(cards) > 0 {
+			_ = json.Unmarshal(cards, &m.Cards)
+		}
 		if len(tr) > 0 {
 			var t trace
 			if json.Unmarshal(tr, &t) == nil {
 				m.Refusal, m.Dropped, m.Error = t.Refusal, len(t.Dropped), t.Error
+				m.Clarify, m.Intent, m.Steps = t.Clarify, t.Intent, t.Steps
 			}
 		}
 		msgs = append(msgs, m)
 	}
 	c.Messages = len(msgs)
 	return c, msgs, rows.Err()
+}
+
+// SetAsOf sets the day a conversation's answers apply the law of; empty
+// means the day each question is asked.
+func (s *Store) SetAsOf(ctx context.Context, id int64, asOf string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE conversations SET as_of_date = nullif($2, '')::date WHERE id = $1`, id, asOf)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
 }
 
 // Rename sets a conversation's title.
@@ -264,8 +344,9 @@ func (s *Store) Delete(ctx context.Context, id int64) error {
 	return err
 }
 
-// Feedback records a rating of an answer. A second rating replaces the first.
-func (s *Store) Feedback(ctx context.Context, message int64, rating int, reason string) error {
+// Feedback records owner's rating of an answer in owner's conversation. A
+// second rating replaces the first.
+func (s *Store) Feedback(ctx context.Context, owner, message int64, rating int, reason string) error {
 	if rating != 1 && rating != -1 {
 		return errors.New("rating must be 1 or -1")
 	}
@@ -275,7 +356,8 @@ func (s *Store) Feedback(ctx context.Context, message int64, rating int, reason 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var role string
-	if err := tx.QueryRow(ctx, `SELECT role FROM messages WHERE id = $1`, message).Scan(&role); errors.Is(err, pgx.ErrNoRows) || role != "assistant" {
+	if err := tx.QueryRow(ctx, `SELECT m.role FROM messages m JOIN conversations c ON c.id = m.conversation_id
+		WHERE m.id = $1 AND ($2::bigint = 0 OR c.user_id = $2)`, message, owner).Scan(&role); errors.Is(err, pgx.ErrNoRows) || role != "assistant" {
 		return ErrNotFound
 	} else if err != nil {
 		return err
@@ -283,7 +365,8 @@ func (s *Store) Feedback(ctx context.Context, message int64, rating int, reason 
 	if _, err := tx.Exec(ctx, `DELETE FROM feedback WHERE message_id = $1`, message); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO feedback (message_id, rating, reason) VALUES ($1, $2, $3)`, message, rating, strings.TrimSpace(reason)); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO feedback (message_id, user_id, rating, reason) VALUES ($1, nullif($2::bigint, 0), $3, $4)`,
+		message, owner, rating, strings.TrimSpace(reason)); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

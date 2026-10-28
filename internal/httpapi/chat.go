@@ -26,7 +26,11 @@ type chatRequest struct {
 // chatStream answers over server-sent events:
 //
 //	meta     {conversation_id, as_of}
-//	status   {stage}             rewrite, retrieve, compose
+//	status   {stage}             rewrite, retrieve, agent, compose
+//	intent   {intent}            where the question was routed
+//	step     {step}              one agent tool call
+//	card     {card}              a status, timeline or HS result, from the data
+//	clarify  {text}              a question back; the answer waits for it
 //	rewrite  {text}              the standalone question
 //	claim    {claim}             a claim whose every quote was verified
 //	dropped  {dropped}           a claim the verifier refused
@@ -42,10 +46,17 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	owner := ownerOf(r)
 	in.Question = strings.TrimSpace(in.Question)
 	if in.AsOf != "" {
 		if _, err := time.Parse(time.DateOnly, in.AsOf); err != nil {
 			writeError(w, http.StatusBadRequest, errors.New("as_of must be YYYY-MM-DD"))
+			return
+		}
+	}
+	if in.ConversationID != 0 {
+		if err := s.Chat.Owns(ctx, in.ConversationID, owner); err != nil {
+			writeError(w, statusOf(err), err)
 			return
 		}
 	}
@@ -71,10 +82,13 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("the question is longer than 2,000 characters"))
 		return
 	}
+	if !s.allowQuestion(w, r) {
+		return
+	}
 
 	var history []answer.Turn
 	if in.ConversationID == 0 {
-		id, err := s.Chat.Create(ctx, in.Question, in.AsOf)
+		id, err := s.Chat.Create(ctx, owner, in.Question, in.AsOf)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -93,6 +107,11 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		history = h
+		if in.AsOf == "" {
+			if c, _, err := s.Chat.Get(ctx, in.ConversationID); err == nil {
+				in.AsOf = c.AsOf
+			}
+		}
 		if in.Regenerate && len(history) > 0 {
 			history = history[:len(history)-1] // the question being answered again
 		}
@@ -135,7 +154,7 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		failure = err.Error()
 	}
-	if res != nil && (len(res.Claims) > 0 || res.Refusal != nil) {
+	if res != nil && (len(res.Claims) > 0 || res.Refusal != nil || res.Clarify != "" || len(res.Cards) > 0) {
 		id, serr := s.Chat.AddAnswer(store, in.ConversationID, res, failure)
 		if serr != nil {
 			s.Log.Error("store answer", "err", serr)
@@ -143,7 +162,7 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			_ = send("done", map[string]any{"message_id": id, "conversation_id": in.ConversationID, "refused": res.Refusal != nil,
 				"dropped": len(res.Dropped), "first_claim_ms": res.FirstClaimMS, "timing_ms": res.TimingMS,
-				"corpus_version": res.CorpusVersion, "model": res.Model})
+				"corpus_version": res.CorpusVersion, "model": res.Model, "clarify": res.Clarify != ""})
 			return
 		}
 	}
@@ -160,7 +179,7 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listConversations(w http.ResponseWriter, r *http.Request) {
-	list, err := s.Chat.List(r.Context(), r.URL.Query().Get("q"), 200)
+	list, err := s.Chat.List(r.Context(), ownerOf(r), r.URL.Query().Get("q"), 200)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -171,6 +190,10 @@ func (s *Server) listConversations(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getConversation(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
+		return
+	}
+	if err := s.Chat.Owns(r.Context(), id, ownerOf(r)); err != nil {
+		writeError(w, statusOf(err), err)
 		return
 	}
 	c, msgs, err := s.Chat.Get(r.Context(), id)
@@ -190,21 +213,44 @@ func (s *Server) renameConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title string `json:"title"`
+		Title *string `json:"title"`
+		AsOf  *string `json:"as_of_date"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if err := s.Chat.Rename(r.Context(), id, in.Title); err != nil {
+	if err := s.Chat.Owns(r.Context(), id, ownerOf(r)); err != nil {
 		writeError(w, statusOf(err), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "title": strings.TrimSpace(in.Title)})
+	if in.Title != nil {
+		if err := s.Chat.Rename(r.Context(), id, *in.Title); err != nil {
+			writeError(w, statusOf(err), err)
+			return
+		}
+	}
+	if in.AsOf != nil {
+		if *in.AsOf != "" {
+			if _, err := time.Parse(time.DateOnly, *in.AsOf); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("as_of_date must be YYYY-MM-DD"))
+				return
+			}
+		}
+		if err := s.Chat.SetAsOf(r.Context(), id, *in.AsOf); err != nil {
+			writeError(w, statusOf(err), err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 
 func (s *Server) deleteConversation(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
+		return
+	}
+	if err := s.Chat.Owns(r.Context(), id, ownerOf(r)); err != nil {
+		writeError(w, statusOf(err), err)
 		return
 	}
 	if err := s.Chat.Delete(r.Context(), id); err != nil {
@@ -223,7 +269,7 @@ func (s *Server) feedback(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if err := s.Chat.Feedback(r.Context(), in.MessageID, in.Rating, in.Reason); err != nil {
+	if err := s.Chat.Feedback(r.Context(), ownerOf(r), in.MessageID, in.Rating, in.Reason); err != nil {
 		writeError(w, statusOf(err), err)
 		return
 	}

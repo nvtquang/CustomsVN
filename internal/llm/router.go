@@ -88,6 +88,7 @@ func (r *Router) Stream(ctx context.Context, role string, req Request, onDelta f
 			return onDelta(d)
 		})
 		if err == nil {
+			resp.Usage.Provider, resp.Usage.Model = name, t.Model
 			return resp, nil
 		}
 		kind := Kind(err)
@@ -109,9 +110,12 @@ func (r *Router) Stream(ctx context.Context, role string, req Request, onDelta f
 type Scripted struct {
 	ProviderName string
 	Replies      []string
-	Err          error
-	Calls        []Request
-	mu           sync.Mutex
+	// ToolTurns, when a call carries tools, answers with these tool calls
+	// first, one turn per call; Replies answer the rest.
+	ToolTurns [][]ToolCall
+	Err       error
+	Calls     []Request
+	mu        sync.Mutex
 }
 
 func (s *Scripted) Name() string { return s.ProviderName }
@@ -122,6 +126,14 @@ func (s *Scripted) Stream(ctx context.Context, req Request, onDelta func(string)
 	if s.Err != nil {
 		s.mu.Unlock()
 		return nil, s.Err
+	}
+	if len(req.Tools) > 0 {
+		var calls []ToolCall
+		if len(s.ToolTurns) > 0 {
+			calls, s.ToolTurns = s.ToolTurns[0], s.ToolTurns[1:]
+		}
+		s.mu.Unlock()
+		return &Response{Provider: s.ProviderName, Model: req.Model, Text: "XONG", ToolCalls: calls, StopReason: "end_turn"}, nil
 	}
 	if len(s.Replies) == 0 {
 		s.mu.Unlock()

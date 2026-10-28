@@ -125,3 +125,62 @@ func Passage(number, title string, path []string, text string) string {
 	}
 	return s
 }
+
+// EmbedHS embeds the HS lines with no embedding under this model, keyed by
+// their content so a re-ingest keeps the vectors.
+func EmbedHS(ctx context.Context, pool *pgxpool.Pool, e Embedder, provider, modelID string, opts StoreOptions) (*StoreResult, error) {
+	if _, err := pool.Exec(ctx, `INSERT INTO embedding_models (name, provider, model, dims) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING`,
+		e.Name(), provider, modelID, e.Dims()); err != nil {
+		return nil, err
+	}
+	typ, ops := VectorType(e.Dims())
+	if _, err := pool.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON hs_embeddings USING hnsw ((embedding::%s) %s) WHERE model = %s`,
+		strings.Replace(IndexName(e.Name()), "chunk_", "hs_", 1), typ, ops, Literal(e.Name()))); err != nil {
+		return nil, fmt.Errorf("create index: %w", err)
+	}
+	where := `NOT EXISTS (SELECT 1 FROM hs_embeddings x WHERE x.content_hash = h.content_hash AND x.model = $1)`
+	res := &StoreResult{Model: e.Name()}
+	if err := pool.QueryRow(ctx, `SELECT count(DISTINCT content_hash) FROM hs_codes h WHERE `+where, e.Name()).Scan(&res.Pending); err != nil {
+		return nil, err
+	}
+	for opts.Limit == 0 || res.Embedded < opts.Limit {
+		rows, err := pool.Query(ctx, `SELECT DISTINCT ON (h.content_hash) h.content_hash, h.code, h.description_vi, h.description_en, coalesce(p.description_vi, '')
+			FROM hs_codes h LEFT JOIN hs_codes p ON p.code = h.parent_code AND p.code <> ''
+			WHERE `+where+` ORDER BY h.content_hash LIMIT 256`, e.Name())
+		if err != nil {
+			return nil, err
+		}
+		var hashes, texts []string
+		for rows.Next() {
+			var hash, code, vi, en, parent string
+			if err := rows.Scan(&hash, &code, &vi, &en, &parent); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			hashes = append(hashes, hash)
+			// The parent's words give "Loại khác" a meaning of its own.
+			texts = append(texts, strings.TrimSpace(code+" "+parent+" — "+vi+"\n"+en))
+		}
+		rows.Close()
+		if len(hashes) == 0 {
+			break
+		}
+		vecs, err := e.Embed(ctx, texts, Document)
+		if err != nil {
+			return res, err
+		}
+		batch := &pgx.Batch{}
+		for i := range hashes {
+			batch.Queue(`INSERT INTO hs_embeddings (content_hash, model, embedding) VALUES ($1, $2, $3::vector) ON CONFLICT DO NOTHING`,
+				hashes[i], e.Name(), VectorLiteral(vecs[i]))
+		}
+		if err := pool.SendBatch(ctx, batch).Close(); err != nil {
+			return res, err
+		}
+		res.Embedded += len(hashes)
+		if opts.Log != nil {
+			fmt.Fprintf(opts.Log, "embed hs %s: %d / %d\n", e.Name(), res.Embedded, res.Pending)
+		}
+	}
+	return res, nil
+}

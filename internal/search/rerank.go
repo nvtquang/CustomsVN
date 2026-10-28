@@ -26,9 +26,14 @@ func NewReranker(r *config.Rerank) (*HTTPReranker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rerank: %w", err)
 	}
-	base := r.BaseURL
+	return RerankerFor(r.Provider, r.BaseURL, r.Model, key)
+}
+
+// RerankerFor builds a reranker from its parts: a provider that implies the
+// address, or any base URL serving /rerank.
+func RerankerFor(provider, base, model, key string) (*HTTPReranker, error) {
 	if base == "" {
-		switch r.Provider {
+		switch provider {
 		case "cohere":
 			base = "https://api.cohere.com/v2"
 		case "jina":
@@ -36,10 +41,10 @@ func NewReranker(r *config.Rerank) (*HTTPReranker, error) {
 		case "voyage":
 			base = "https://api.voyageai.com/v1"
 		default:
-			return nil, fmt.Errorf("rerank: unknown provider %q (want cohere, jina or voyage, or give base_url)", r.Provider)
+			return nil, fmt.Errorf("rerank: unknown provider %q (want cohere, jina or voyage, or give base_url)", provider)
 		}
 	}
-	return &HTTPReranker{URL: strings.TrimRight(base, "/") + "/rerank", Model: r.Model, Key: key,
+	return &HTTPReranker{URL: strings.TrimRight(base, "/") + "/rerank", Model: model, Key: key,
 		Client: &http.Client{Timeout: 60 * time.Second}}, nil
 }
 

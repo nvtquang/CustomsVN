@@ -20,6 +20,7 @@ import (
 	"github.com/nvtquang/CustomsVN/internal/llm"
 	"github.com/nvtquang/CustomsVN/internal/refs"
 	"github.com/nvtquang/CustomsVN/internal/search"
+	"github.com/nvtquang/CustomsVN/internal/tools"
 )
 
 // Turn is an earlier exchange of the conversation.
@@ -62,30 +63,39 @@ type Dropped struct {
 
 // Refusal is an answer that declines, with ways to ask again.
 type Refusal struct {
-	Code        string   `json:"code"` // no_sources, out_of_scope, tariff, unverified, model
+	Code        string   `json:"code"` // no_sources, out_of_scope, tariff, unverified
 	Reason      string   `json:"reason"`
 	Suggestions []string `json:"suggestions,omitempty"`
 }
 
 // Event is one server-sent event of an answer in progress.
 type Event struct {
-	Type    string   `json:"type"` // status, rewrite, claim, dropped, refusal
-	Stage   string   `json:"stage,omitempty"`
-	Text    string   `json:"text,omitempty"`
-	Claim   *Claim   `json:"claim,omitempty"`
-	Dropped *Dropped `json:"dropped,omitempty"`
-	Refusal *Refusal `json:"refusal,omitempty"`
-	Sources int      `json:"sources,omitempty"`
+	Type    string      `json:"type"` // status, rewrite, intent, step, card, clarify, claim, dropped, refusal
+	Stage   string      `json:"stage,omitempty"`
+	Text    string      `json:"text,omitempty"`
+	Intent  *Intent     `json:"intent,omitempty"`
+	Step    *Step       `json:"step,omitempty"`
+	Card    *tools.Card `json:"card,omitempty"`
+	Claim   *Claim      `json:"claim,omitempty"`
+	Dropped *Dropped    `json:"dropped,omitempty"`
+	Refusal *Refusal    `json:"refusal,omitempty"`
+	Sources int         `json:"sources,omitempty"`
 }
 
 // Result is a finished answer.
 type Result struct {
-	Question      string               `json:"question"`
-	Standalone    string               `json:"standalone"`
-	AsOf          string               `json:"as_of"`
-	Claims        []Claim              `json:"claims"`
-	Dropped       []Dropped            `json:"dropped,omitempty"`
-	Refusal       *Refusal             `json:"refusal,omitempty"`
+	Question   string    `json:"question"`
+	Standalone string    `json:"standalone"`
+	AsOf       string    `json:"as_of"`
+	Claims     []Claim   `json:"claims"`
+	Dropped    []Dropped `json:"dropped,omitempty"`
+	Refusal    *Refusal  `json:"refusal,omitempty"`
+	// Clarify is a question back to the reader when the answer depends on
+	// something the question left out.
+	Clarify       string               `json:"clarify,omitempty"`
+	Intent        Intent               `json:"intent"`
+	Steps         []Step               `json:"steps,omitempty"`
+	Cards         []tools.Card         `json:"cards,omitempty"`
 	Retrieved     []string             `json:"retrieved"`
 	CorpusVersion int64                `json:"corpus_version"`
 	Provider      string               `json:"provider,omitempty"`
@@ -102,6 +112,19 @@ type Result struct {
 func (r *Result) Markdown() string {
 	if r.Refusal != nil {
 		return r.Refusal.Reason
+	}
+	if r.Clarify != "" {
+		return r.Clarify
+	}
+	if len(r.Claims) == 0 {
+		// An answer made of cards: the history keeps what they said.
+		var parts []string
+		for _, s := range r.Steps {
+			if s.Summary != "" && s.Error == "" && s.Tool != "search_legal" && s.Tool != "get_provision" {
+				parts = append(parts, s.Summary)
+			}
+		}
+		return strings.Join(parts, "; ")
 	}
 	var b strings.Builder
 	for i, c := range r.Claims {
@@ -138,7 +161,12 @@ type Answerer struct {
 	// Retrieval returns the stored retrieval settings; nil means defaults.
 	// The as-of day and K are set per answer.
 	Retrieval func(context.Context) (search.Filters, search.Config)
-	// K is how many chunks the composer sees.
+	// Tools are the agent's tools; nil answers from the search alone.
+	Tools *tools.Toolset
+	// ToolLoop lets the answer model call tools before composing, up to
+	// MaxSteps times, for questions about rules and procedures.
+	ToolLoop bool
+	// K is how many chunks the search hands the composer.
 	K   int
 	Now func() time.Time
 }
@@ -192,7 +220,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			fmt.Fprintf(&hist, "%s: %s\n", map[string]string{"user": "Người dùng", "assistant": "Trợ lý"}[h.Role], truncate(h.Content, 1200))
 		}
 		resp, err := router.Stream(ctx, role, llm.Request{System: rewriteSystem, MaxTokens: 300,
-			Messages: []llm.Message{{Role: "user", Content: "CUỘC TRÒ CHUYỆN:\n" + hist.String() + "\nCÂU HỎI CUỐI: " + res.Question}}}, nil)
+			Messages: []llm.Message{{Role: "user", Content: "CUỘC TRÒ CHUYỆN:\n" + fence(hist.String()) + "\nCÂU HỎI CUỐI:\n<question>\n" + fence(res.Question) + "\n</question>"}}}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -217,37 +245,40 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 				"Hỏi về nguyên tắc áp dụng thuế suất, ví dụ: Khi nào được áp dụng thuế suất ưu đãi đặc biệt?"}})
 	}
 
-	// 2. Retrieve.
+	// 2. Route. Rules first, then the router model if one is configured.
 	t := time.Now()
-	if err := emit(Event{Type: "status", Stage: "retrieve"}); err != nil {
+	intent, usage := a.route(ctx, router, res.Standalone, found)
+	res.Intent = intent
+	addUsage(res, llm.RoleRouter, usage)
+	res.TimingMS["route"] = ms(t)
+	if err := emit(Event{Type: "intent", Intent: &res.Intent}); err != nil {
 		return nil, err
 	}
-	k := a.K
-	if k <= 0 {
-		k = 8
+	switch {
+	case intent.Kind == IntentOutOfScope:
+		return a.refuse(res, emit, &Refusal{Code: "out_of_scope",
+			Reason:      "Câu hỏi nằm ngoài phạm vi pháp luật hải quan, xuất nhập khẩu và thuế liên quan mà CustomsVN tra cứu.",
+			Suggestions: []string{"Hỏi về thủ tục hải quan, thuế xuất nhập khẩu, xuất xứ, trị giá, mã HS hoặc xử phạt trong lĩnh vực hải quan."}})
+	case intent.Clarify != "":
+		res.Clarify = intent.Clarify
+		if err := emit(Event{Type: "clarify", Text: intent.Clarify}); err != nil {
+			return nil, err
+		}
+		return res, nil
 	}
-	var filters search.Filters
-	var cfg search.Config
-	if a.Retrieval != nil {
-		filters, cfg = a.Retrieval(ctx)
-	}
-	// An answer is never grounded on a document out of force, whatever the
-	// settings screen allows for inspection.
-	filters.AsOf, filters.IncludeExpired, cfg.K = asOf, false, k
-	sr, err := a.Engine.Search(ctx, search.Request{Query: res.Standalone, Filters: filters, Config: cfg})
+
+	// 3. Gather sources and cards.
+	hits, err := a.gather(ctx, router, res, found, emit)
 	if err != nil {
 		return nil, err
 	}
-	res.CorpusVersion = sr.CorpusVersion
-	var hits []search.Hit
-	for _, h := range sr.Hits {
-		if h.Usable { // the scope already ensures it; this is the second lock
-			hits = append(hits, h)
-			res.Retrieved = append(res.Retrieved, h.ChunkID)
-		}
+	for _, h := range hits {
+		res.Retrieved = append(res.Retrieved, h.ChunkID)
 	}
-	lap("retrieve", t)
 	if len(hits) == 0 {
+		if len(res.Cards) > 0 {
+			return res, nil
+		}
 		return a.refuse(res, emit, &Refusal{Code: "no_sources",
 			Reason:      "Không tìm thấy điều khoản nào còn hiệu lực liên quan đến câu hỏi.",
 			Suggestions: []string{"Nêu rõ thủ tục, loại hàng hóa hoặc văn bản bạn quan tâm.", "Kiểm tra lại mốc ngày áp dụng."}})
@@ -282,7 +313,16 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		}
 		switch {
 		case out.Refuse != "":
-			refusal = &Refusal{Code: "out_of_scope", Reason: out.Refuse, Suggestions: out.Suggestions}
+			refusal = &Refusal{Code: "out_of_scope", Reason: out.Refuse}
+			if !Unlinked(out.Refuse) {
+				// The reason is the model's free text, shown as it is.
+				refusal.Reason = "Câu hỏi nằm ngoài phạm vi các văn bản đang có."
+			}
+			for _, s := range out.Suggestions {
+				if Unlinked(s) {
+					refusal.Suggestions = append(refusal.Suggestions, s)
+				}
+			}
 			return nil
 		case out.End || out.Claim == "":
 			return nil
@@ -314,6 +354,15 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			claim.Citations = append(claim.Citations, Citation{N: n, ChunkID: h.ChunkID, DocID: h.Doc.ID, Number: h.Doc.OfficialNumber,
 				Title: h.Doc.Title, Path: strings.Join(h.Chunk.Path, " › "), Quote: strings.TrimSpace(c.Quote), Force: h.Force, Verified: true})
 		}
+		if reason == "" {
+			var cited []string
+			for _, c := range out.Citations {
+				cited = append(cited, hits[c.Source-1].Chunk.Text)
+			}
+			if !Unlinked(claim.Text, cited...) {
+				reason = "link"
+			}
+		}
 		if reason != "" {
 			res.Dropped = append(res.Dropped, Dropped{Text: truncate(out.Claim, 300), Reason: reason})
 			return emit(Event{Type: "dropped", Dropped: &res.Dropped[len(res.Dropped)-1]})
@@ -325,7 +374,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		return emit(Event{Type: "claim", Claim: &res.Claims[len(res.Claims)-1]})
 	}
 	resp, err := router.Stream(ctx, llm.RoleAnswer, llm.Request{System: composeSystem, MaxTokens: 3000,
-		Messages: []llm.Message{{Role: "user", Content: composeUser(res.Standalone, hits, asOf)}}},
+		Messages: []llm.Message{{Role: "user", Content: composeUser(res.Standalone, hits, asOf, cardsNote(res.Cards))}}},
 		func(delta string) error {
 			for {
 				i := strings.IndexByte(delta, '\n')
@@ -352,11 +401,14 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		return nil, err
 	}
 	res.Provider, res.Model = resp.Provider, resp.Model
-	res.Usage[llm.RoleAnswer] = resp.Usage
+	addUsage(res, llm.RoleAnswer, resp.Usage)
 	lap("compose", t)
 
 	switch {
 	case len(res.Claims) > 0:
+		return res, nil
+	case len(res.Cards) > 0:
+		// The cards answer from the data; no claim was needed beside them.
 		return res, nil
 	case refusal != nil:
 		return a.refuse(res, emit, refusal)

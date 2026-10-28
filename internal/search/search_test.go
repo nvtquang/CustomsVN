@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 )
@@ -129,5 +130,103 @@ func TestCovers(t *testing.T) {
 func TestVectorModeNeedsAModel(t *testing.T) {
 	if _, err := engine().Search(context.Background(), Request{Query: "x", Config: Config{Mode: ModeVector}}); err == nil {
 		t.Error("want an error")
+	}
+}
+
+func TestParentKey(t *testing.T) {
+	for id, want := range map[string]string{
+		luat + ":article-18":                        luat + ":article-18",
+		luat + ":chapter-2:article-18:clause-2":     luat + ":chapter-2:article-18",
+		luat + ":annex-1:article-3:clause-1#part-2": luat + ":annex-1:article-3",
+		luat + ":table-1":                           "",
+	} {
+		if got := parentKey(id); got != want {
+			t.Errorf("%s: got %q, want %q", id, got, want)
+		}
+	}
+}
+
+func TestParentContextAddsTheRestOfTheArticle(t *testing.T) {
+	art := tt + ":article-30"
+	c := fixture()
+	chunks := []Chunk{}
+	for _, ch := range c.Chunks {
+		chunks = append(chunks, *ch)
+	}
+	chunks = append(chunks,
+		Chunk{ID: art, DocID: tt, Text: "Kiểm tra sau thông quan", Tier: 1, SourceKind: "original"},
+		Chunk{ID: art + ":clause-1", DocID: tt, Text: "1. Hồ sơ kiểm tra sau thông quan gồm quyết định kiểm tra", Tier: 1, SourceKind: "original"},
+		Chunk{ID: art + ":clause-2", DocID: tt, Text: "2. Thời hạn kiểm tra là năm ngày làm việc", Tier: 1, SourceKind: "original"})
+	docs := []Doc{}
+	for _, d := range c.Docs {
+		docs = append(docs, *d)
+	}
+	e := NewEngine(NewCorpus(1, docs, chunks))
+	e.Now = engine().Now
+	req := Request{Query: "hồ sơ kiểm tra sau thông quan quyết định", Config: Config{K: 1, KeepOriginals: true}}
+	res, err := e.Search(context.Background(), req)
+	if err != nil || len(res.Hits) != 1 || res.Hits[0].ChunkID != art+":clause-1" {
+		t.Fatalf("without context: %+v %v", res, err)
+	}
+	req.Config.ParentContext = 6000
+	res, err = e.Search(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, h.ChunkID+"<"+h.ContextOf)
+	}
+	want := []string{art + ":clause-1<", art + "<" + art + ":clause-1", art + ":clause-2<" + art + ":clause-1"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("hit %d: got %s, want %s", i, got[i], want[i])
+		}
+	}
+	// A budget that holds only the hit adds nothing.
+	req.Config.ParentContext = 60
+	if res, _ = e.Search(context.Background(), req); len(res.Hits) != 1 {
+		t.Errorf("small budget: %d hits", len(res.Hits))
+	}
+}
+
+type fixedReranker map[string]float64
+
+func (f fixedReranker) Rerank(_ context.Context, _ string, passages []string) ([]float64, error) {
+	out := make([]float64, len(passages))
+	for i, p := range passages {
+		for prefix, s := range f {
+			if len(p) >= len(prefix) && p[:len(prefix)] == prefix {
+				out[i] = s
+			}
+		}
+	}
+	return out, nil
+}
+
+func TestMinScoreDropsLowRerankScores(t *testing.T) {
+	e := engine()
+	m := NewModels()
+	m.AddReranker("test/r", fixedReranker{"1. " + quyen[:10]: 0.9})
+	e.SetModels(m)
+	req := Request{Query: "người khai hải quan", Config: Config{Rerank: true, MinScore: 0.5}}
+	res, err := e.Search(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].ChunkID != luat+":article-18" || res.BelowThreshold == 0 {
+		t.Errorf("hits %d, below %d", len(res.Hits), res.BelowThreshold)
+	}
+	if res.Config.RerankModel != "test/r" {
+		t.Errorf("rerank model %q", res.Config.RerankModel)
+	}
+	// Fused BM25 scores have no 0-1 scale: the threshold is not applied.
+	req.Config.Rerank = false
+	res, _ = e.Search(context.Background(), req)
+	if res.BelowThreshold != 0 || len(res.Hits) < 2 || !slices.Contains(res.Notes, NoteNoThreshold) {
+		t.Errorf("without rerank: hits %d, notes %v", len(res.Hits), res.Notes)
 	}
 }

@@ -3,6 +3,7 @@ package evalx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -249,4 +250,47 @@ func scanRun(row pgx.Row) (*RunInfo, error) {
 		_ = json.Unmarshal(metrics, r.Metrics)
 	}
 	return &r, nil
+}
+
+// FeedbackSet is the gold set reviewed feedback grows. Unlike an imported set
+// it is not versioned on each change: items are added to it one by one, so a
+// run records how many items it had when it ran.
+const FeedbackSet = "feedback"
+
+// AddGoldItem adds an item to a gold set, or replaces the item with the same
+// ext_id. setID 0 means the feedback set, created on first use.
+func AddGoldItem(ctx context.Context, pool *pgxpool.Pool, setID int64, it Item) (int64, int64, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if setID == 0 {
+		err := tx.QueryRow(ctx, `SELECT id FROM gold_sets WHERE name = $1 ORDER BY version DESC LIMIT 1`, FeedbackSet).Scan(&setID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `INSERT INTO gold_sets (name, version, format, note) VALUES ($1, 1, 'feedback', $2) RETURNING id`,
+				FeedbackSet, "Câu hỏi từ feedback đã review").Scan(&setID)
+		}
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	var asOf *time.Time
+	if t, err := time.Parse(time.DateOnly, it.AsOf); err == nil {
+		asOf = &t
+	}
+	ids := it.ExpectedIDs
+	if ids == nil {
+		ids = []string{}
+	}
+	var id int64
+	if err := tx.QueryRow(ctx, `INSERT INTO gold_items (gold_set_id, ext_id, question, expected_provisions, expected_ids, expected_answer, as_of_date, category, should_refuse, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (gold_set_id, ext_id) DO UPDATE SET question = EXCLUDED.question, expected_provisions = EXCLUDED.expected_provisions,
+			expected_ids = EXCLUDED.expected_ids, expected_answer = EXCLUDED.expected_answer, as_of_date = EXCLUDED.as_of_date,
+			category = EXCLUDED.category, should_refuse = EXCLUDED.should_refuse, notes = EXCLUDED.notes
+		RETURNING id`, setID, it.ExtID, it.Question, it.ExpectedProvisions, ids, it.ExpectedAnswer, asOf, it.Category, it.ShouldRefuse, it.Notes).Scan(&id); err != nil {
+		return 0, 0, err
+	}
+	return setID, id, tx.Commit(ctx)
 }

@@ -24,12 +24,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tamnd/luatdo/retrieve"
 
 	"github.com/nvtquang/CustomsVN/internal/corpus"
-	"github.com/nvtquang/CustomsVN/internal/embed"
 	"github.com/nvtquang/CustomsVN/internal/refs"
 )
 
@@ -69,6 +69,19 @@ type Config struct {
 	Model        string  `json:"model,omitempty"`
 	Rerank       bool    `json:"rerank"`
 	RerankK      int     `json:"rerank_k"`
+	// RerankModel names the reranker; empty means the default one.
+	RerankModel string `json:"rerank_model,omitempty"`
+	// MinScore drops hits scored below it, on a 0-1 scale: the reranker's
+	// score when the hits were reranked, else the cosine similarity in a
+	// vector search. Fused and BM25 scores have no such scale, so it does
+	// not apply to them. Zero is off; a provision named in the question is
+	// never dropped.
+	MinScore float64 `json:"min_score,omitempty"`
+	// ParentContext, when above zero, puts the rest of a hit's article after
+	// it, nearest provisions first, up to this many characters in all: the
+	// clause is what matched, the article is what the model reads. Each
+	// added chunk is a real chunk, so a quote from it verifies as usual.
+	ParentContext int `json:"parent_context,omitempty"`
 	// KeepOriginals turns off step 5: original chunks are not replaced by
 	// their consolidated wording.
 	KeepOriginals bool `json:"keep_originals"`
@@ -133,7 +146,8 @@ type Hit struct {
 	Named      *Component `json:"named,omitempty"`
 	RRF        float64    `json:"rrf"`
 	Rerank     *float64   `json:"rerank,omitempty"`
-	Replaced   string     `json:"replaced,omitempty"` // the original chunk a consolidated one stands in for
+	Replaced   string     `json:"replaced,omitempty"`   // the original chunk a consolidated one stands in for
+	ContextOf  string     `json:"context_of,omitempty"` // added as part of this hit's article, not ranked
 	Duplicates []string   `json:"duplicates,omitempty"`
 	Chunk      *Chunk     `json:"chunk"`
 	Doc        *Doc       `json:"doc"`
@@ -163,6 +177,8 @@ type Response struct {
 	Notes         []string           `json:"notes,omitempty"`
 	TimingMS      map[string]float64 `json:"timing_ms"`
 	ExpiredInTopK int                `json:"expired_in_top_k"`
+	// BelowThreshold counts the hits MinScore dropped.
+	BelowThreshold int `json:"below_threshold,omitempty"`
 }
 
 // Notes and reference notes are codes, so the UI can say them in the
@@ -172,6 +188,7 @@ const (
 	NoteBM25Only    = "bm25_only"     // hybrid without an embedding model
 	NoteNoDatabase  = "no_database"   // vector search needs the database
 	NoteNoReranker  = "no_reranker"   // rerank asked for, none configured
+	NoteNoThreshold = "no_threshold"  // a score threshold with scores it cannot apply to
 	RefNoInstrument = "no_instrument" // "Điều 5" with no instrument named
 	RefNotInCorpus  = "not_in_corpus" // the instrument is not in the corpus
 	RefNoProvision  = "no_provision"  // the instrument has no such provision
@@ -183,24 +200,28 @@ type Reranker interface {
 	Rerank(ctx context.Context, query string, passages []string) ([]float64, error)
 }
 
-// Engine searches the corpus it holds. The corpus can be swapped while
-// searches run, after an ingest.
+// Engine searches the corpus it holds. The corpus and the models can be
+// swapped while searches run, after an ingest or a settings change.
 type Engine struct {
-	corpus    atomic.Pointer[Corpus]
-	Pool      *pgxpool.Pool
-	Embedders map[string]embed.Embedder
-	Reranker  Reranker
-	// DefaultModel is used when a hybrid or vector search names none.
-	DefaultModel string
-	Now          func() time.Time
+	corpus atomic.Pointer[Corpus]
+	models atomic.Pointer[Models]
+	Pool   *pgxpool.Pool
+	Now    func() time.Time
 }
 
-// NewEngine returns an engine over c.
+// NewEngine returns an engine over c, with no models.
 func NewEngine(c *Corpus) *Engine {
-	e := &Engine{Embedders: map[string]embed.Embedder{}, Now: time.Now}
+	e := &Engine{Now: time.Now}
 	e.corpus.Store(c)
+	e.models.Store(NewModels())
 	return e
 }
+
+// Models are the models searches currently use.
+func (e *Engine) Models() *Models { return e.models.Load() }
+
+// SetModels replaces the models.
+func (e *Engine) SetModels(m *Models) { e.models.Store(m) }
 
 // Corpus is the corpus searches currently run against.
 func (e *Engine) Corpus() *Corpus { return e.corpus.Load() }
@@ -233,6 +254,7 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 	if query == "" {
 		return nil, fmt.Errorf("empty query")
 	}
+	ms := e.Models()
 	res := &Response{Query: query, Filters: f, Config: cfg, CorpusVersion: c.Version, TimingMS: map[string]float64{}}
 	lap := func(name string, t time.Time) { res.TimingMS[name] = float64(time.Since(t).Microseconds()) / 1000 }
 
@@ -314,9 +336,9 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 	if cfg.Mode == ModeHybrid || cfg.Mode == ModeVector {
 		model := cfg.Model
 		if model == "" {
-			model = e.DefaultModel
+			model = ms.DefaultModel
 		}
-		emb := e.Embedders[model]
+		emb := ms.Embedders[model]
 		switch {
 		case emb == nil && cfg.Mode == ModeVector:
 			return nil, fmt.Errorf("vector search needs an embedding model; none named %q is configured", model)
@@ -380,14 +402,15 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 	sortHits(order)
 	lap("fuse", t)
 
-	if cfg.Rerank && e.Reranker != nil && len(order) > 0 {
+	reranker := ms.Reranker(cfg.RerankModel)
+	if cfg.Rerank && reranker != nil && len(order) > 0 {
 		t = time.Now()
 		top := order[:min(cfg.RerankK, len(order))]
 		passages := make([]string, len(top))
 		for i, h := range top {
 			passages[i] = c.Chunks[h.ChunkID].Text
 		}
-		scores, err := e.Reranker.Rerank(ctx, query, passages)
+		scores, err := reranker.Rerank(ctx, query, passages)
 		if err != nil {
 			return nil, fmt.Errorf("rerank: %w", err)
 		}
@@ -397,6 +420,9 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 		}
 		sortHits(top)
 		order = append(top, order[len(top):]...)
+		if res.Config.RerankModel == "" {
+			res.Config.RerankModel = ms.DefaultReranker
+		}
 		lap("rerank", t)
 	} else if cfg.Rerank {
 		res.Notes = append(res.Notes, NoteNoReranker)
@@ -418,11 +444,21 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 		order = append(head, rest...)
 	}
 
-	// 5. Consolidated wording first, duplicates folded, cut to K.
+	// 5. Consolidated wording first, duplicates folded, the threshold
+	// applied, cut to K.
+	threshold := cfg.MinScore > 0
+	if threshold && (cfg.Rerank && reranker == nil || !cfg.Rerank && cfg.Mode != ModeVector) {
+		res.Notes = append(res.Notes, NoteNoThreshold)
+		threshold = false
+	}
 	seen := map[string]*Hit{}
 	for _, h := range order {
 		if len(res.Hits) == cfg.K {
 			break
+		}
+		if threshold && !h.Direct && belowThreshold(h, cfg.MinScore) {
+			res.BelowThreshold++
+			continue
 		}
 		ch := c.Chunks[h.ChunkID]
 		if !cfg.KeepOriginals {
@@ -444,8 +480,67 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 		res.Hits = append(res.Hits, *h)
 		seen[h.ChunkID] = &res.Hits[len(res.Hits)-1]
 	}
+	if cfg.ParentContext > 0 {
+		res.Hits = c.withParents(res.Hits, cfg.ParentContext)
+	}
 	res.TimingMS["total"] = float64(time.Since(start).Microseconds()) / 1000
 	return res, nil
+}
+
+// belowThreshold: a reranked hit is judged by its rerank score, any other by
+// its cosine similarity; a hit the vector search did not return has none.
+func belowThreshold(h *Hit, min float64) bool {
+	switch {
+	case h.Rerank != nil:
+		return *h.Rerank < min
+	case h.Vector != nil:
+		return h.Vector.Score < min
+	}
+	return true
+}
+
+// withParents puts after each hit the other chunks of its article that are
+// not hits already, nearest first, while the article stays within budget
+// characters, then in document order.
+func (c *Corpus) withParents(hits []Hit, budget int) []Hit {
+	have := map[string]bool{}
+	for _, h := range hits {
+		have[h.ChunkID] = true
+	}
+	out := make([]Hit, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, h)
+		fam := c.family[parentKey(h.ChunkID)]
+		at := slices.IndexFunc(fam, func(x *Chunk) bool { return x.ID == h.ChunkID })
+		if at < 0 || h.Chunk == nil {
+			continue
+		}
+		used := utf8.RuneCountInString(h.Chunk.Text)
+		var picked []int
+		for d := 1; d < len(fam); d++ {
+			for _, i := range []int{at - d, at + d} {
+				if i < 0 || i >= len(fam) || have[fam[i].ID] {
+					continue
+				}
+				n := utf8.RuneCountInString(fam[i].Text)
+				if used+n > budget {
+					continue
+				}
+				used += n
+				picked = append(picked, i)
+				have[fam[i].ID] = true
+			}
+		}
+		slices.Sort(picked)
+		for _, i := range picked {
+			ch := fam[i]
+			out = append(out, Hit{ChunkID: ch.ID, Chunk: ch, Doc: h.Doc, Force: h.Force, Usable: h.Usable, ContextOf: h.ChunkID})
+		}
+	}
+	for i := range out {
+		out[i].Rank = i + 1
+	}
+	return out
 }
 
 func sortHits(h []*Hit) {
@@ -472,4 +567,22 @@ func (c *Corpus) bm25(query string, docs []string, k int, duplicates float64) []
 		out[i] = ranked{id: h.ID, score: h.Score}
 	}
 	return out
+}
+
+// HitFor is a chunk as a search hit, with its document's force on asOf. It
+// is how a tool that fetches one provision hands it to the composer in the
+// same shape a search would.
+func (e *Engine) HitFor(chunkID, asOf string) *Hit {
+	c := e.Corpus()
+	ch := c.Chunks[chunkID]
+	if ch == nil {
+		return nil
+	}
+	d := c.Docs[ch.DocID]
+	today := e.Now().Format(time.DateOnly)
+	if asOf == "" {
+		asOf = today
+	}
+	f := c.Force(d, asOf, today)
+	return &Hit{ChunkID: ch.ID, Chunk: ch, Doc: d, Force: f, Usable: Usable(f)}
 }

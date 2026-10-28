@@ -15,6 +15,7 @@ import (
 
 	"github.com/tamnd/luatdo/law"
 
+	"github.com/nvtquang/CustomsVN/internal/corpus"
 	"github.com/nvtquang/CustomsVN/internal/prep"
 )
 
@@ -61,6 +62,10 @@ func run(args []string) error {
 		return runEval(args[1:])
 	case "bootstrap":
 		return runBootstrap(args[1:])
+	case "mcp":
+		return runMCP(args[1:])
+	case "user":
+		return runUser(args[1:])
 	}
 	return usage()
 }
@@ -76,7 +81,9 @@ func usage() error {
   embed -model NAME  embed new and changed chunks
   serve              serve the API and the Web UI
   eval -goldset FILE run a gold set against the retriever and print metrics
-  bootstrap          first data load: luatdo, prep, migrate, ingest`)
+  bootstrap          first data load: luatdo, prep, migrate, ingest
+  mcp                serve MCP over stdin/stdout (the server also serves it at /mcp)
+  user list|add|passwd  manage accounts of the Web UI`)
 }
 
 // parse parses flags and treats -h as success.
@@ -98,11 +105,16 @@ func runPrep(args []string) error {
 	fs.StringVar(&opts.AsOf, "as-of", "", "judge force on this day, YYYY-MM-DD (default today)")
 	fs.StringVar(&opts.Revision, "revision", "", "th1nhng0 revision under <data>/raw (default "+prep.Revision[:12]+")")
 	fs.BoolVar(&opts.Legacy, "legacy", true, "fill empty consolidated texts from the legacy_content config (see NOTICE); -legacy=false to skip")
+	fs.StringVar(&opts.Chunking.Mode, "chunking", corpus.ChunkGeneral, "general (an article per chunk) or parent_child (a chunk per clause)")
+	fs.IntVar(&opts.Chunking.MaxLength, "max-length", corpus.MaxArticle, "general: split an article at its clauses past this many characters")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: customsvn prep [flags] [%s]\n", strings.Join(prep.Steps, " | "))
 		fs.PrintDefaults()
 	}
 	if ok, err := parse(fs, args); !ok {
+		return err
+	}
+	if err := opts.Chunking.Validate(); err != nil {
 		return err
 	}
 	opts.Log = os.Stderr

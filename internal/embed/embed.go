@@ -47,6 +47,18 @@ func New(e *config.Embedding) (Embedder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("embedding %s: %w", e.Name, err)
 	}
+	return NewWithKey(e, key)
+}
+
+// NewWithKey builds an embedder with a key given directly, for a model set
+// up in the settings screen, whose key is stored encrypted.
+func NewWithKey(e *config.Embedding, key string) (Embedder, error) {
+	if e.Batch <= 0 {
+		e.Batch = 64
+	}
+	if e.RPM <= 0 {
+		e.RPM = 60
+	}
 	c := &client{cfg: *e, key: key, http: &http.Client{Timeout: 120 * time.Second}, limit: newLimiter(e.RPM)}
 	switch e.Provider {
 	case "openai", "":
@@ -94,7 +106,7 @@ func (c *client) Embed(ctx context.Context, texts []string, kind Kind) ([][]floa
 			return nil, fmt.Errorf("%s returned %d vectors for %d texts", c.cfg.Name, len(vecs), len(batch))
 		}
 		for _, v := range vecs {
-			if len(v) != c.cfg.Dims {
+			if c.cfg.Dims > 0 && len(v) != c.cfg.Dims { // zero only in a connection test
 				return nil, fmt.Errorf("%s returned %d dimensions, config says %d", c.cfg.Name, len(v), c.cfg.Dims)
 			}
 		}

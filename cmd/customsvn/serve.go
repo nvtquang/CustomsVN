@@ -15,31 +15,35 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nvtquang/CustomsVN/internal/answer"
+	"github.com/nvtquang/CustomsVN/internal/auth"
 	"github.com/nvtquang/CustomsVN/internal/chat"
 	"github.com/nvtquang/CustomsVN/internal/config"
 	"github.com/nvtquang/CustomsVN/internal/embed"
 	"github.com/nvtquang/CustomsVN/internal/evalx"
 	"github.com/nvtquang/CustomsVN/internal/httpapi"
+	"github.com/nvtquang/CustomsVN/internal/jobs"
 	"github.com/nvtquang/CustomsVN/internal/llm"
 	"github.com/nvtquang/CustomsVN/internal/llmconfig"
 	"github.com/nvtquang/CustomsVN/internal/search"
 	"github.com/nvtquang/CustomsVN/internal/secret"
+	"github.com/nvtquang/CustomsVN/internal/tools"
 	"github.com/nvtquang/CustomsVN/web"
 )
 
 // newEngine loads the corpus into memory and wires every embedding model and
-// the reranker whose key is present. A model whose key is missing is skipped
-// with a warning, so serve still runs BM25 on a machine with no keys.
-func newEngine(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log *slog.Logger) (*search.Engine, []string, bool, error) {
+// the reranker of the config file whose key is present. A model whose key is
+// missing is skipped with a warning, so serve still runs BM25 on a machine
+// with no keys. The models of the settings screen are added by the server.
+func newEngine(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log *slog.Logger) (*search.Engine, *search.Models, error) {
 	start := time.Now()
 	c, err := search.Load(ctx, pool)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
 	log.Info("corpus loaded", "version", c.Version, "documents", len(c.Docs), "chunks", len(c.Chunks), "ms", time.Since(start).Milliseconds())
 	e := search.NewEngine(c)
 	e.Pool = pool
-	var models []string
+	models := search.NewModels()
 	for i := range cfg.Embedding {
 		m := &cfg.Embedding[i]
 		emb, err := embed.New(m)
@@ -47,22 +51,18 @@ func newEngine(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 			log.Warn("embedding model skipped", "model", m.Name, "err", err)
 			continue
 		}
-		e.Embedders[m.Name] = emb
-		models = append(models, m.Name)
-		if e.DefaultModel == "" {
-			e.DefaultModel = m.Name
-		}
+		models.AddEmbedder(emb, search.Source{Provider: m.Provider, Model: m.Model})
 	}
-	rerank := false
 	if cfg.Rerank != nil {
 		r, err := search.NewReranker(cfg.Rerank)
 		if err != nil {
 			log.Warn("reranker skipped", "err", err)
 		} else {
-			e.Reranker, rerank = r, true
+			models.AddReranker(cfg.Rerank.Provider+"/"+cfg.Rerank.Model, r)
 		}
 	}
-	return e, models, rerank, nil
+	e.SetModels(models)
+	return e, models, nil
 }
 
 func runServe(args []string) error {
@@ -83,7 +83,7 @@ func runServe(args []string) error {
 	if *listen != "" {
 		cfg.Listen = *listen
 	}
-	e, models, rerank, err := newEngine(ctx, cfg, pool, log)
+	e, fileModels, err := newEngine(ctx, cfg, pool, log)
 	if err != nil {
 		return err
 	}
@@ -94,12 +94,41 @@ func runServe(args []string) error {
 		}
 		log.Warn("no master key: LLM API keys can come only from environment variables", "env", secret.Env)
 	}
-	srv := &httpapi.Server{Pool: pool, Engine: e, Models: models, Rerank: rerank, UI: web.Dist(), Log: log,
+	srv := &httpapi.Server{Pool: pool, Engine: e, FileModels: fileModels, UI: web.Dist(), Log: log,
 		Chat: &chat.Store{Pool: pool}, LLM: &llmconfig.Store{Pool: pool, Box: box}}
-	srv.Answerer = &answer.Answerer{Engine: e, Router: srv.Router, Now: e.Now, Retrieval: srv.RetrievalSettings}
+	srv.Tools = &tools.Toolset{Pool: pool, Engine: e}
+	srv.Version = version
+	srv.Answerer = &answer.Answerer{Engine: e, Router: srv.Router, Now: e.Now, Retrieval: srv.RetrievalSettings,
+		Tools: srv.Tools, ToolLoop: true}
 	if _, err := srv.ReloadLLM(ctx); err != nil {
 		return err
 	}
+	srv.Auth = &auth.Store{Pool: pool}
+	created, password, err := srv.Auth.EnsureAdmin(ctx, os.Getenv(AdminEmailEnv), os.Getenv(AdminPasswordEnv))
+	if err != nil {
+		return err
+	}
+	if created {
+		if os.Getenv(AdminPasswordEnv) == "" {
+			// Written to stderr once, never stored in clear; change it in the
+			// UI or reset it with customsvn user passwd.
+			fmt.Fprintf(os.Stderr, "\nFirst admin created. Log in with:\n  email:    %s\n  password: %s\nChange the password after logging in.\n\n",
+				orDefault(os.Getenv(AdminEmailEnv), "admin"), password)
+		} else {
+			log.Info("first admin created", "email", orDefault(os.Getenv(AdminEmailEnv), "admin"))
+		}
+	}
+	go pruneSessions(ctx, srv.Auth, log)
+	if err := evalx.MarkInterrupted(ctx, pool); err != nil {
+		return err
+	}
+	srv.PrepDir = cfg.Prep
+	srv.Jobs = &jobs.Runner{Pool: pool, Log: log, Kinds: jobKinds(cfg, pool, e), After: afterJob(pool, e, srv.Tools)}
+	if err := srv.Jobs.Start(ctx); err != nil {
+		return err
+	}
+	srv.Answers = &evalx.AnswerRunner{Pool: pool, Answerer: srv.Answerer, LLM: srv.LLM, Cost: srv.Cost,
+		Record: func(ctx context.Context, res *answer.Result) error { return srv.Chat.RecordUsage(ctx, 0, "eval:", res) }}
 	if !srv.Router().Has(llm.RoleAnswer) {
 		log.Warn("no answer model configured: set one in Settings › LLM")
 	}
@@ -118,6 +147,35 @@ func runServe(args []string) error {
 		return err
 	}
 	return nil
+}
+
+// AdminEmailEnv and AdminPasswordEnv set the first admin, created when the
+// database has no user. Without a password one is generated and printed once.
+const (
+	AdminEmailEnv    = "CUSTOMSVN_ADMIN_EMAIL"
+	AdminPasswordEnv = "CUSTOMSVN_ADMIN_PASSWORD"
+)
+
+func orDefault(s, d string) string {
+	if s == "" {
+		return d
+	}
+	return s
+}
+
+func pruneSessions(ctx context.Context, a *auth.Store, log *slog.Logger) {
+	t := time.NewTicker(6 * time.Hour)
+	defer t.Stop()
+	for {
+		if err := a.Prune(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("prune sessions", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 func runEval(args []string) error {
@@ -149,7 +207,7 @@ func runEval(args []string) error {
 		return err
 	}
 	defer pool.Close()
-	e, _, _, err := newEngine(ctx, cfg, pool, log)
+	e, _, err := newEngine(ctx, cfg, pool, log)
 	if err != nil {
 		return err
 	}
@@ -190,6 +248,7 @@ func runEmbed(args []string) error {
 	configPath := fs.String("config", "", "config file (default ./customsvn.yaml)")
 	model := fs.String("model", "", "embedding model name from the config (default the first)")
 	limit := fs.Int("limit", 0, "stop after this many chunks (0 = all)")
+	target := fs.String("target", "chunks", "what to embed: chunks or hs (HS descriptions)")
 	if ok, err := parse(fs, args); !ok {
 		return err
 	}
@@ -212,6 +271,13 @@ func runEmbed(args []string) error {
 	}
 	emb, err := embed.New(m)
 	if err != nil {
+		return err
+	}
+	if *target == "hs" {
+		res, err := embed.EmbedHS(ctx, pool, emb, m.Provider, m.Model, embed.StoreOptions{Limit: *limit, Log: os.Stderr})
+		if res != nil {
+			_ = printJSON(res)
+		}
 		return err
 	}
 	res, err := embed.EmbedChunks(ctx, pool, emb, m.Provider, m.Model, embed.StoreOptions{Limit: *limit, Log: os.Stderr})

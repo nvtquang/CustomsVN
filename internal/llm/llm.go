@@ -20,6 +20,7 @@ import (
 const (
 	RoleAnswer  = "answer"  // composes the answer
 	RoleRewrite = "rewrite" // turns a follow-up into a standalone question
+	RoleRouter  = "router"  // classifies the question; a cheap model
 )
 
 // Message is one turn. Tool results and tool calls ride along so an agent
@@ -59,6 +60,10 @@ type Request struct {
 type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
+	// Provider and Model are the target that answered, set by the router so
+	// usage can be priced per call when a role fails over.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // Response is a finished call.

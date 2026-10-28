@@ -50,13 +50,25 @@ func (s *Server) putLLMSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"settings": st, "problems": msgs})
 }
 
-func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Provider string `json:"provider"`
-		Model    string `json:"model"`
+// listModels asks a provider, saved or being set up, which models it serves.
+func (s *Server) listModels(w http.ResponseWriter, r *http.Request) {
+	var p llmconfig.Provider
+	if !readJSON(w, r, &p) {
+		return
 	}
+	ids, err := s.LLM.ListModels(r.Context(), p)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"models": []string{}, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"models": ids})
+}
+
+// testLLM tries one model, of a stored provider or of one being set up.
+func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
+	var in llmconfig.TestRequest
 	if !readJSON(w, r, &in) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.LLM.Test(r.Context(), in.Provider, in.Model))
+	writeJSON(w, http.StatusOK, s.LLM.TestModel(r.Context(), in))
 }
