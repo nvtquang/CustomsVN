@@ -1,6 +1,8 @@
 // The chat half of the API: conversations, the answer stream, documents,
 // feedback and LLM settings.
 
+import { sessionEnded } from "../query";
+
 export interface Citation {
   n: number;
   chunk_id: string;
@@ -24,6 +26,95 @@ export interface Refusal {
   suggestions?: string[];
 }
 
+export interface RegDoc {
+  id: string;
+  number: string;
+  title: string;
+  doc_type?: string;
+  issuing_body?: string;
+  signed_on?: string;
+  effective_from?: string;
+  expired_on?: string;
+  force_status?: string;
+  source_url?: string;
+  in_corpus: boolean;
+}
+
+export interface DocLink extends RegDoc {
+  relation: string;
+  label?: string;
+}
+
+export interface StatusCard extends RegDoc {
+  as_of: string;
+  force: string;
+  consolidated_in?: RegDoc;
+  replaced_by?: DocLink[];
+  note?: string;
+}
+
+export interface TimelineCard {
+  doc: RegDoc;
+  as_of: string;
+  force: string;
+  events: { date: string; kind: string; doc: RegDoc; label?: string; undated?: boolean }[];
+}
+
+export interface HSStep {
+  code?: string;
+  description_vi: string;
+  level: number;
+}
+
+export interface HSLine {
+  position: number;
+  code: string;
+  level: number;
+  description_vi: string;
+  description_en: string;
+  unit?: string;
+  chapter: string;
+  path?: HSStep[];
+  children?: HSStep[];
+  score?: number;
+}
+
+export interface HSCard {
+  query: string;
+  by_code: boolean;
+  lines: HSLine[];
+  source_doc_id: string;
+  source: string;
+}
+
+export interface GraphCard {
+  query: string;
+  doc: RegDoc;
+  rows: DocLink[];
+}
+
+export type Card =
+  | { type: "status"; data: StatusCard }
+  | { type: "amendments"; data: TimelineCard }
+  | { type: "hs"; data: HSCard }
+  | { type: "graph"; data: GraphCard };
+
+export interface Step {
+  n: number;
+  tool: string;
+  args: Record<string, unknown>;
+  summary?: string;
+  error?: string;
+  by: "plan" | "model";
+  ms: number;
+}
+
+export interface Intent {
+  kind: string;
+  clarify?: string;
+  by: string;
+}
+
 export interface Message {
   id: number;
   role: "user" | "assistant";
@@ -31,6 +122,10 @@ export interface Message {
   refused: boolean;
   claims?: Claim[];
   refusal?: Refusal;
+  clarify?: string;
+  intent?: Intent;
+  steps?: Step[];
+  cards?: Card[];
   dropped?: number;
   as_of_date?: string;
   corpus_version?: number;
@@ -50,7 +145,11 @@ export interface Conversation {
 
 export type ChatEvent =
   | { type: "meta"; conversation_id: number; as_of: string; question: string }
-  | { type: "status"; stage: "rewrite" | "retrieve" | "compose"; sources?: number }
+  | { type: "status"; stage: "rewrite" | "retrieve" | "agent" | "compose"; sources?: number }
+  | { type: "intent"; intent: Intent }
+  | { type: "step"; step: Step }
+  | { type: "card"; card: Card }
+  | { type: "clarify"; text: string }
   | { type: "rewrite"; text: string }
   | { type: "claim"; claim: Claim }
   | { type: "dropped"; dropped: { text: string; reason: string } }
@@ -82,6 +181,7 @@ export async function streamChat(
     body: JSON.stringify(body),
     signal,
   });
+  if (res.status === 401) sessionEnded();
   if (!res.ok || !res.body) {
     let message = res.statusText;
     try {
@@ -89,7 +189,11 @@ export async function streamChat(
     } catch {
       // not JSON
     }
-    onEvent({ type: "error", kind: res.status >= 500 ? "server" : "request", message });
+    onEvent({
+      type: "error",
+      kind: res.status === 429 ? "rate_limit" : res.status >= 500 ? "server" : "request",
+      message,
+    });
     return;
   }
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -121,6 +225,7 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
+  if (res.status === 401) sessionEnded();
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error((data && data.error) || res.statusText);
   return data as T;
@@ -136,12 +241,23 @@ export interface ProvisionNode {
   position: number;
 }
 
+export type ProviderKind = "anthropic" | "openai" | "luatdo" | "voyage" | "jina" | "cohere";
+export type ModelType = "chat" | "embedding" | "rerank";
+
+export interface EmbeddingModel {
+  model: string;
+  dims: number;
+}
+
 export interface LLMProvider {
   name: string;
-  kind: "anthropic" | "openai" | "luatdo";
+  kind: ProviderKind;
   base_url: string;
   api_key_env: string;
+  /** Chat models. */
   models: string[];
+  embeddings?: EmbeddingModel[];
+  rerankers?: string[];
   has_key?: boolean;
   key_hint?: string;
   env_key_set?: boolean;
@@ -154,9 +270,16 @@ export interface LLMTarget {
   model: string;
 }
 
+export interface LLMPrice {
+  input: number;
+  output: number;
+}
+
 export interface LLMSettings {
   providers: LLMProvider[];
   roles: Record<string, LLMTarget[]>;
+  /** USD per million tokens, keyed by "provider/model". */
+  prices: Record<string, LLMPrice>;
   master_key: boolean;
 }
 
@@ -167,6 +290,8 @@ export interface LLMTest {
   latency_ms: number;
   kind?: string;
   error?: string;
+  dims?: number;
+  scores?: number[];
 }
 
 export const chatApi = {
@@ -174,6 +299,13 @@ export const chatApi = {
   conversation: (id: number) =>
     json<{ conversation: Conversation; messages: Message[] }>("GET", "/api/conversations/" + id),
   rename: (id: number, title: string) => json("PATCH", "/api/conversations/" + id, { title }),
+  setAsOf: (id: number, as_of_date: string) => json("PATCH", "/api/conversations/" + id, { as_of_date }),
+  hs: (q: string) => json<HSCard>("GET", "/api/hs?q=" + encodeURIComponent(q)),
+  tool: <T>(name: string, args: Record<string, unknown>, as_of = "") =>
+    json<{ text: string; summary: string; card?: { type: string; data: T } }>("POST", "/api/tools/" + name, {
+      args,
+      as_of,
+    }),
   remove: (id: number) => json("DELETE", "/api/conversations/" + id),
   feedback: (message_id: number, rating: number, reason: string) =>
     json("POST", "/api/feedback", { message_id, rating, reason }),
@@ -188,5 +320,7 @@ export const chatApi = {
     }>("GET", "/api/documents/" + encodeURIComponent(id)),
   llm: () => json<LLMSettings>("GET", "/api/settings/llm"),
   saveLLM: (s: LLMSettings) => json<{ settings: LLMSettings; problems: string[] }>("PUT", "/api/settings/llm", s),
-  testLLM: (provider: string, model: string) => json<LLMTest>("POST", "/api/settings/llm/test", { provider, model }),
+  /** Tries a model of a stored provider (given by name) or of one being set up. */
+  testModel: (provider: Partial<LLMProvider> & { name: string }, type: ModelType, model: string) =>
+    json<LLMTest>("POST", "/api/settings/llm/test", { provider, type, model }),
 };

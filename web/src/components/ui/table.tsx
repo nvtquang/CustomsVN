@@ -12,6 +12,7 @@ export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>)
 export function Th({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
+      scope="col"
       className={cn("border-b px-2.5 py-2 text-left text-2xs font-medium text-muted-foreground uppercase", className)}
       {...props}
     />

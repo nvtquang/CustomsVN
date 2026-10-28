@@ -22,6 +22,10 @@ export interface SearchConfig {
   model?: string;
   rerank: boolean;
   rerank_k: number;
+  rerank_model?: string;
+  /** 0-1; applies to rerank scores, or to cosine similarity in a vector search. 0 is off. */
+  min_score?: number;
+  parent_context?: number;
   keep_originals: boolean;
   ignore_refs: boolean;
   duplicates: number;
@@ -82,6 +86,8 @@ export interface Hit {
   rrf: number;
   rerank?: number;
   replaced?: string;
+  /** Set on a chunk added as part of that hit's article. */
+  context_of?: string;
   duplicates?: string[];
   chunk: Chunk;
   doc: Doc;
@@ -111,6 +117,7 @@ export interface SearchResponse {
   notes?: string[];
   timing_ms: Record<string, number>;
   expired_in_top_k: number;
+  below_threshold?: number;
 }
 
 export interface Meta {
@@ -122,14 +129,29 @@ export interface Meta {
   embedding_models: string[] | null;
   default_model: string;
   rerank: boolean;
+  rerank_models: string[] | null;
   defaults: SearchConfig;
   today: string;
   llm_ready: boolean;
 }
 
+export type ChunkMode = "general" | "parent_child";
+
+export interface Chunking {
+  mode: ChunkMode;
+  max_length?: number;
+  parent_length?: number;
+}
+
 export interface RetrievalSettings {
   filters: Filters;
   config: SearchConfig;
+  index?: "high_quality" | "economy";
+  /** Passages an answer is given; config.k is the lab's. */
+  top_k?: number;
+  chunking?: Chunking;
+  /** How the last prep cut the documents (read only). */
+  prepared?: Chunking;
 }
 
 export interface GoldItem {

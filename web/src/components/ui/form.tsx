@@ -39,12 +39,15 @@ export function Checkbox({
   );
 }
 
-/** A labelled control in a form grid. */
+/**
+ * A labelled control in a form grid. The label wraps the control, so the
+ * control takes its accessible name from it without an id to keep in sync.
+ */
 export function Field({ label, children, className }: { label: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
-      <Label>{label}</Label>
+    <label className={cn("flex flex-col gap-1", className)}>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }

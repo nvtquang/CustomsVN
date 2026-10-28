@@ -12,6 +12,8 @@ import type {
   SearchResponse,
 } from "./types";
 
+import { sessionEnded } from "../query";
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -22,7 +24,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
@@ -37,8 +39,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!res.ok) {
     const msg = data && typeof data === "object" && "error" in data ? String(data.error) : res.statusText;
+    if (res.status === 401 && !path.startsWith("/api/auth/")) sessionEnded();
     throw new ApiError(res.status, msg, data);
   }
+  if (res.status === 204) return undefined as T;
   return data as T;
 }
 

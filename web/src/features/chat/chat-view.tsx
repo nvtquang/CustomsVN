@@ -6,7 +6,17 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/form";
 import { api } from "@/lib/api/client";
-import { chatApi, streamChat, type ChatEvent, type Claim, type Message, type Refusal } from "@/lib/api/chat";
+import {
+  chatApi,
+  streamChat,
+  type Card,
+  type ChatEvent,
+  type Claim,
+  type Message,
+  type Refusal,
+  type Step,
+} from "@/lib/api/chat";
+import { CardView, StepsView } from "./cards";
 import { ClaimView, ErrorView, Feedback, RefusalView, RegenerateButton, SourcesList } from "./message";
 
 interface Pending {
@@ -17,6 +27,9 @@ interface Pending {
   claims: Claim[];
   dropped: number;
   refusal?: Refusal;
+  clarify?: string;
+  steps: Step[];
+  cards: Card[];
   error?: { kind: string; message: string };
   regenerate: boolean;
 }
@@ -33,7 +46,19 @@ export function ChatView({ id }: { id?: number }) {
   const [pending, setPending] = useState<Pending | null>(null);
   const abort = useRef<AbortController | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
-  const streaming = !!pending && !pending.error && !pending.refusal && pending.stage !== "done";
+  const streaming = !!pending && !pending.error && !pending.refusal && !pending.clarify && pending.stage !== "done";
+  // The day the law is applied as of: the conversation's, or the one picked
+  // before its first question.
+  const convAsOf = conv.data?.conversation.as_of_date ?? "";
+  const effectiveAsOf = id ? convAsOf : asOf;
+  const changeAsOf = async (v: string) => {
+    if (id) {
+      await chatApi.setAsOf(id, v);
+      await qc.invalidateQueries({ queryKey: ["conversation", id] });
+    } else {
+      setAsOf(v);
+    }
+  };
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -44,7 +69,14 @@ export function ChatView({ id }: { id?: number }) {
     const ctrl = new AbortController();
     abort.current = ctrl;
     let convID = id;
-    setPending({ question: body.question ?? "", claims: [], dropped: 0, regenerate: !!body.regenerate });
+    setPending({
+      question: body.question ?? "",
+      claims: [],
+      steps: [],
+      cards: [],
+      dropped: 0,
+      regenerate: !!body.regenerate,
+    });
     const on = (e: ChatEvent) => {
       if (e.type === "meta") convID = e.conversation_id;
       setPending((p) => {
@@ -56,6 +88,12 @@ export function ChatView({ id }: { id?: number }) {
             return { ...p, stage: e.stage, sources: e.sources ?? p.sources };
           case "rewrite":
             return { ...p, rewritten: e.text };
+          case "step":
+            return { ...p, steps: [...p.steps, e.step] };
+          case "card":
+            return { ...p, cards: [...p.cards, e.card] };
+          case "clarify":
+            return { ...p, clarify: e.text };
           case "claim":
             return { ...p, claims: [...p.claims, e.claim] };
           case "dropped":
@@ -71,7 +109,7 @@ export function ChatView({ id }: { id?: number }) {
       });
     };
     try {
-      await streamChat({ conversation_id: id, as_of: asOf || undefined, ...body }, on, ctrl.signal);
+      await streamChat({ conversation_id: id, as_of: id ? undefined : asOf || undefined, ...body }, on, ctrl.signal);
     } catch (err) {
       const stopped = ctrl.signal.aborted;
       setPending((p) => (p ? { ...p, error: { kind: stopped ? "canceled" : "offline", message: String(err) } } : p));
@@ -119,12 +157,18 @@ export function ChatView({ id }: { id?: number }) {
           {pending && (
             <>
               {!pending.regenerate && pending.question && <UserBubble text={pending.question} />}
-              <div className="space-y-3">
+              {/* Read out claim by claim as they are verified. */}
+              <div className="space-y-3" aria-live="polite" aria-busy={streaming}>
                 {pending.rewritten && (
                   <p className="text-xs text-muted-foreground italic">
                     {t("chat.rewritten", { q: pending.rewritten })}
                   </p>
                 )}
+                <StepsView steps={pending.steps} open={streaming} />
+                {pending.cards.map((c, i) => (
+                  <CardView key={i} card={c} />
+                ))}
+                {pending.clarify && <ClarifyView text={pending.clarify} />}
                 {pending.claims.map((c, i) => (
                   <ClaimView key={i} claim={c} />
                 ))}
@@ -159,6 +203,7 @@ export function ChatView({ id }: { id?: number }) {
         <div className="mx-auto max-w-3xl space-y-2 p-3 lg:px-6">
           <div className="flex items-end gap-2">
             <Textarea
+              id="question"
               aria-label={t("chat.placeholder")}
               placeholder={t("chat.placeholder")}
               className="max-h-48 min-h-11 resize-none"
@@ -167,6 +212,7 @@ export function ChatView({ id }: { id?: number }) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) submit(e);
+                if (e.key === "Escape" && streaming) abort.current?.abort();
               }}
             />
             {streaming ? (
@@ -191,9 +237,14 @@ export function ChatView({ id }: { id?: number }) {
               <Input
                 type="date"
                 className="h-7 w-36 text-xs"
-                value={asOf || meta.data?.today || ""}
-                onChange={(e) => setAsOf(e.target.value)}
+                value={effectiveAsOf || meta.data?.today || ""}
+                onChange={(e) => void changeAsOf(e.target.value)}
               />
+              {effectiveAsOf && effectiveAsOf !== meta.data?.today && (
+                <button type="button" className="cursor-pointer text-primary" onClick={() => void changeAsOf("")}>
+                  {t("chat.asOfToday")}
+                </button>
+              )}
             </label>
             <span>{meta.data && t("chat.dataDate", { date: meta.data.corpus_as_of })}</span>
           </div>
@@ -208,7 +259,7 @@ function dropLastAnswer(ms: Message[]) {
   return i === ms.length - 1 ? ms.slice(0, i) : ms;
 }
 
-function UserBubble({ text }: { text: string }) {
+export function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
       <div className="max-w-[85%] rounded-lg bg-accent px-3.5 py-2 text-sm whitespace-pre-wrap text-accent-foreground">
@@ -218,18 +269,34 @@ function UserBubble({ text }: { text: string }) {
   );
 }
 
-function AssistantStored({ m, last, onRegenerate }: { m: Message; last: boolean; onRegenerate: () => void }) {
+/** A stored answer. readOnly leaves out rating and regenerating, for review. */
+export function AssistantStored({
+  m,
+  last,
+  onRegenerate,
+  readOnly,
+}: {
+  m: Message;
+  last?: boolean;
+  onRegenerate?: () => void;
+  readOnly?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="space-y-3">
+      {m.steps && <StepsView steps={m.steps} />}
+      {m.cards?.map((c, i) => <CardView key={i} card={c} />)}
+      {m.clarify && <ClarifyView text={m.clarify} />}
       {m.refusal ? <RefusalView refusal={m.refusal} /> : m.claims?.map((c, i) => <ClaimView key={i} claim={c} />)}
       {!!m.dropped && <p className="text-2xs text-muted-foreground">{t("chat.dropped", { n: m.dropped })}</p>}
       {m.claims && m.claims.length > 0 && <SourcesList claims={m.claims} />}
       {m.error && <ErrorView kind="server" message={m.error} />}
-      <div className="flex items-center gap-2">
-        <Feedback messageId={m.id} initial={m.rating} />
-        {last && <RegenerateButton onClick={onRegenerate} />}
-      </div>
+      {!readOnly && (
+        <div className="flex items-center gap-2">
+          <Feedback messageId={m.id} initial={m.rating} />
+          {last && onRegenerate && <RegenerateButton onClick={onRegenerate} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -263,6 +330,16 @@ function Empty({ onPick }: { onPick: (q: string) => void }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ClarifyView({ text }: { text: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-md border border-primary/40 bg-accent/40 p-3 text-sm">
+      <div className="mb-1 text-2xs font-medium text-accent-foreground">{t("chat.clarify")}</div>
+      {text}
     </div>
   );
 }

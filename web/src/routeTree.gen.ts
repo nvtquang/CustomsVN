@@ -9,16 +9,51 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as HsRouteImport } from './routes/hs'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as SettingsRetrievalRouteImport } from './routes/settings/retrieval'
+import { Route as SettingsModelsRouteImport } from './routes/settings/models'
 import { Route as SettingsLlmRouteImport } from './routes/settings/llm'
+import { Route as SettingsKnowledgeRouteImport } from './routes/settings/knowledge'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings/integrations'
+import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
+import { Route as SettingsConfigRouteImport } from './routes/settings/config'
+import { Route as SettingsAccountRouteImport } from './routes/settings/account'
 import { Route as LabRetrievalRouteImport } from './routes/lab/retrieval'
+import { Route as LabAnswersRouteImport } from './routes/lab/answers'
+import { Route as HelpIntegrationsRouteImport } from './routes/help/integrations'
 import { Route as DocIdRouteImport } from './routes/doc/$id'
 import { Route as CIdRouteImport } from './routes/c/$id'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminFeedbackRouteImport } from './routes/admin/feedback'
+import { Route as AdminDataRouteImport } from './routes/admin/data'
 
+const HsRoute = HsRouteImport.update({
+  id: '/hs',
+  path: '/hs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRetrievalRoute = SettingsRetrievalRouteImport.update({
@@ -26,14 +61,54 @@ const SettingsRetrievalRoute = SettingsRetrievalRouteImport.update({
   path: '/settings/retrieval',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsModelsRoute = SettingsModelsRouteImport.update({
+  id: '/settings/models',
+  path: '/settings/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsLlmRoute = SettingsLlmRouteImport.update({
   id: '/settings/llm',
   path: '/settings/llm',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsKnowledgeRoute = SettingsKnowledgeRouteImport.update({
+  id: '/settings/knowledge',
+  path: '/settings/knowledge',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/settings/integrations',
+  path: '/settings/integrations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
+  id: '/settings/general',
+  path: '/settings/general',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsConfigRoute = SettingsConfigRouteImport.update({
+  id: '/settings/config',
+  path: '/settings/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: '/settings/account',
+  path: '/settings/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LabRetrievalRoute = LabRetrievalRouteImport.update({
   id: '/lab/retrieval',
   path: '/lab/retrieval',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabAnswersRoute = LabAnswersRouteImport.update({
+  id: '/lab/answers',
+  path: '/lab/answers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpIntegrationsRoute = HelpIntegrationsRouteImport.update({
+  id: '/help/integrations',
+  path: '/help/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocIdRoute = DocIdRouteImport.update({
@@ -46,75 +121,223 @@ const CIdRoute = CIdRouteImport.update({
   path: '/c/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminFeedbackRoute = AdminFeedbackRouteImport.update({
+  id: '/admin/feedback',
+  path: '/admin/feedback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminDataRoute = AdminDataRouteImport.update({
+  id: '/admin/data',
+  path: '/admin/data',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/hs': typeof HsRoute
+  '/admin/data': typeof AdminDataRoute
+  '/admin/feedback': typeof AdminFeedbackRoute
+  '/admin/users': typeof AdminUsersRoute
   '/c/$id': typeof CIdRoute
   '/doc/$id': typeof DocIdRoute
+  '/help/integrations': typeof HelpIntegrationsRoute
+  '/lab/answers': typeof LabAnswersRoute
   '/lab/retrieval': typeof LabRetrievalRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/config': typeof SettingsConfigRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/knowledge': typeof SettingsKnowledgeRoute
   '/settings/llm': typeof SettingsLlmRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/retrieval': typeof SettingsRetrievalRoute
+  '/admin': typeof AdminIndexRoute
+  '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/hs': typeof HsRoute
+  '/admin/data': typeof AdminDataRoute
+  '/admin/feedback': typeof AdminFeedbackRoute
+  '/admin/users': typeof AdminUsersRoute
   '/c/$id': typeof CIdRoute
   '/doc/$id': typeof DocIdRoute
+  '/help/integrations': typeof HelpIntegrationsRoute
+  '/lab/answers': typeof LabAnswersRoute
   '/lab/retrieval': typeof LabRetrievalRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/config': typeof SettingsConfigRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/knowledge': typeof SettingsKnowledgeRoute
   '/settings/llm': typeof SettingsLlmRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/retrieval': typeof SettingsRetrievalRoute
+  '/admin': typeof AdminIndexRoute
+  '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/hs': typeof HsRoute
+  '/admin/data': typeof AdminDataRoute
+  '/admin/feedback': typeof AdminFeedbackRoute
+  '/admin/users': typeof AdminUsersRoute
   '/c/$id': typeof CIdRoute
   '/doc/$id': typeof DocIdRoute
+  '/help/integrations': typeof HelpIntegrationsRoute
+  '/lab/answers': typeof LabAnswersRoute
   '/lab/retrieval': typeof LabRetrievalRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/config': typeof SettingsConfigRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/knowledge': typeof SettingsKnowledgeRoute
   '/settings/llm': typeof SettingsLlmRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/retrieval': typeof SettingsRetrievalRoute
+  '/admin/': typeof AdminIndexRoute
+  '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
+    | '/hs'
+    | '/admin/data'
+    | '/admin/feedback'
+    | '/admin/users'
     | '/c/$id'
     | '/doc/$id'
+    | '/help/integrations'
+    | '/lab/answers'
     | '/lab/retrieval'
+    | '/settings/account'
+    | '/settings/config'
+    | '/settings/general'
+    | '/settings/integrations'
+    | '/settings/knowledge'
     | '/settings/llm'
+    | '/settings/models'
     | '/settings/retrieval'
+    | '/admin'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account'
+    | '/hs'
+    | '/admin/data'
+    | '/admin/feedback'
+    | '/admin/users'
     | '/c/$id'
     | '/doc/$id'
+    | '/help/integrations'
+    | '/lab/answers'
     | '/lab/retrieval'
+    | '/settings/account'
+    | '/settings/config'
+    | '/settings/general'
+    | '/settings/integrations'
+    | '/settings/knowledge'
     | '/settings/llm'
+    | '/settings/models'
     | '/settings/retrieval'
+    | '/admin'
+    | '/settings'
   id:
     | '__root__'
     | '/'
+    | '/account'
+    | '/hs'
+    | '/admin/data'
+    | '/admin/feedback'
+    | '/admin/users'
     | '/c/$id'
     | '/doc/$id'
+    | '/help/integrations'
+    | '/lab/answers'
     | '/lab/retrieval'
+    | '/settings/account'
+    | '/settings/config'
+    | '/settings/general'
+    | '/settings/integrations'
+    | '/settings/knowledge'
     | '/settings/llm'
+    | '/settings/models'
     | '/settings/retrieval'
+    | '/admin/'
+    | '/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
+  HsRoute: typeof HsRoute
+  AdminDataRoute: typeof AdminDataRoute
+  AdminFeedbackRoute: typeof AdminFeedbackRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   CIdRoute: typeof CIdRoute
   DocIdRoute: typeof DocIdRoute
+  HelpIntegrationsRoute: typeof HelpIntegrationsRoute
+  LabAnswersRoute: typeof LabAnswersRoute
   LabRetrievalRoute: typeof LabRetrievalRoute
+  SettingsAccountRoute: typeof SettingsAccountRoute
+  SettingsConfigRoute: typeof SettingsConfigRoute
+  SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
+  SettingsKnowledgeRoute: typeof SettingsKnowledgeRoute
   SettingsLlmRoute: typeof SettingsLlmRoute
+  SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsRetrievalRoute: typeof SettingsRetrievalRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/hs': {
+      id: '/hs'
+      path: '/hs'
+      fullPath: '/hs'
+      preLoaderRoute: typeof HsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/retrieval': {
@@ -124,6 +347,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRetrievalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/models': {
+      id: '/settings/models'
+      path: '/settings/models'
+      fullPath: '/settings/models'
+      preLoaderRoute: typeof SettingsModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/llm': {
       id: '/settings/llm'
       path: '/settings/llm'
@@ -131,11 +361,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsLlmRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/knowledge': {
+      id: '/settings/knowledge'
+      path: '/settings/knowledge'
+      fullPath: '/settings/knowledge'
+      preLoaderRoute: typeof SettingsKnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/settings/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/general': {
+      id: '/settings/general'
+      path: '/settings/general'
+      fullPath: '/settings/general'
+      preLoaderRoute: typeof SettingsGeneralRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/config': {
+      id: '/settings/config'
+      path: '/settings/config'
+      fullPath: '/settings/config'
+      preLoaderRoute: typeof SettingsConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/account': {
+      id: '/settings/account'
+      path: '/settings/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof SettingsAccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/lab/retrieval': {
       id: '/lab/retrieval'
       path: '/lab/retrieval'
       fullPath: '/lab/retrieval'
       preLoaderRoute: typeof LabRetrievalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lab/answers': {
+      id: '/lab/answers'
+      path: '/lab/answers'
+      fullPath: '/lab/answers'
+      preLoaderRoute: typeof LabAnswersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/help/integrations': {
+      id: '/help/integrations'
+      path: '/help/integrations'
+      fullPath: '/help/integrations'
+      preLoaderRoute: typeof HelpIntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/doc/$id': {
@@ -152,16 +431,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/feedback': {
+      id: '/admin/feedback'
+      path: '/admin/feedback'
+      fullPath: '/admin/feedback'
+      preLoaderRoute: typeof AdminFeedbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/data': {
+      id: '/admin/data'
+      path: '/admin/data'
+      fullPath: '/admin/data'
+      preLoaderRoute: typeof AdminDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
+  HsRoute: HsRoute,
+  AdminDataRoute: AdminDataRoute,
+  AdminFeedbackRoute: AdminFeedbackRoute,
+  AdminUsersRoute: AdminUsersRoute,
   CIdRoute: CIdRoute,
   DocIdRoute: DocIdRoute,
+  HelpIntegrationsRoute: HelpIntegrationsRoute,
+  LabAnswersRoute: LabAnswersRoute,
   LabRetrievalRoute: LabRetrievalRoute,
+  SettingsAccountRoute: SettingsAccountRoute,
+  SettingsConfigRoute: SettingsConfigRoute,
+  SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
+  SettingsKnowledgeRoute: SettingsKnowledgeRoute,
   SettingsLlmRoute: SettingsLlmRoute,
+  SettingsModelsRoute: SettingsModelsRoute,
   SettingsRetrievalRoute: SettingsRetrievalRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

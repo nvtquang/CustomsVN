@@ -5,6 +5,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useTranslation } from "react-i18next";
 import { ForceBadge } from "@/components/force-badge";
+import { useMe } from "@/features/auth/use-me";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/form";
 import { chatApi, type Claim, type Refusal } from "@/lib/api/chat";
@@ -20,7 +21,11 @@ export function ClaimView({ claim }: { claim: Claim }) {
   return (
     <div className="space-y-1">
       <div className="prose-claim">
-        <ReactMarkdown>{claim.text}</ReactMarkdown>
+        {/* The server drops claims with links or images; the renderer does not
+            draw them either, so a claim can never make the browser fetch a URL. */}
+        <ReactMarkdown disallowedElements={["img", "a"]} unwrapDisallowed skipHtml>
+          {claim.text}
+        </ReactMarkdown>
       </div>
       <div className="flex flex-wrap gap-1">
         {chips.map((c) => (
@@ -111,7 +116,8 @@ export function RefusalView({ refusal }: { refusal: Refusal }) {
 
 export function ErrorView({ kind, message }: { kind: string; message: string }) {
   const { t } = useTranslation();
-  const known = ["no_model", "quota", "auth", "network", "server", "request", "canceled", "offline"];
+  const admin = useMe().data?.role === "admin";
+  const known = ["no_model", "quota", "auth", "network", "server", "request", "canceled", "offline", "rate_limit"];
   return (
     <div
       className={cn(
@@ -121,8 +127,8 @@ export function ErrorView({ kind, message }: { kind: string; message: string }) 
     >
       <AlertTriangle className="size-4" />
       <span>{known.includes(kind) ? t("chat.errors." + kind, { msg: message }) : message}</span>
-      {(kind === "no_model" || kind === "auth") && (
-        <Link to="/settings/llm" className="font-medium underline">
+      {(kind === "no_model" || kind === "auth") && admin && (
+        <Link to="/settings/models" className="font-medium underline">
           {t("chat.errors.goSettings")}
         </Link>
       )}

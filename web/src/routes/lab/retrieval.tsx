@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { LabNav } from "@/features/lab/lab-nav";
 import { useTranslation } from "react-i18next";
 import { Tabs } from "@/components/ui/tabs";
 import { ABCompare } from "@/features/retrieval-lab/ab";
@@ -23,6 +24,7 @@ function RetrievalLab() {
   const models = d.meta?.embedding_models ?? [];
   return (
     <div className="mx-auto max-w-[110rem] space-y-4 p-4 lg:p-6">
+      <LabNav />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">{t("lab.title")}</h1>
