@@ -38,7 +38,10 @@ var NearCues = []string{"biên giới", "xuất cảnh", "nhập cảnh", "logis
 	"cảng biển", "cảng hàng không", "hiệp định thương mại", "miễn thuế", "hoàn thuế", "hóa đơn",
 	"quản lý thuế", "thuế giá trị gia tăng", "thuế tiêu thụ đặc biệt", "thuế bảo vệ môi trường",
 	"xử phạt vi phạm hành chính", "ngoại hối", "thương mại điện tử", "chất lượng sản phẩm, hàng hóa",
-	"an toàn thực phẩm", "nhãn hàng hóa", "khu kinh tế", "bưu chính", "chuyển phát"}
+	"an toàn thực phẩm", "nhãn hàng hóa", "khu kinh tế", "bưu chính", "chuyển phát",
+	// Chemicals need a licence or a declaration to cross the border; without
+	// these, Luật Hóa chất 69/2025/QH15 and NĐ 26/2026/NĐ-CP stayed in tier 3.
+	"hóa chất", "hoá chất", "tiền chất"}
 
 var provincial = []string{"ubnd", "ủy ban nhân dân", "uỷ ban nhân dân", "hđnd", "hội đồng nhân dân"}
 

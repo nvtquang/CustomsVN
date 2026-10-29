@@ -29,7 +29,7 @@ A full run takes one to two minutes. Two runs with the same inputs and `-as-of` 
 ### Tiers
 
 1. Core customs: procedures, import and export duty, origin, valuation, classification, trade remedies, bonded areas, smuggling. A subject in `thue/hai-quan`, `thue/thue-xuat-nhap-khau` or `thuong-mai/xuat-nhap-khau`, or a core cue in the title, and not issued by a province.
-2. Adjacent: other taxes, trade, fees, foreign exchange, borders and transport; plus national acts that two or more tier 1 documents cite.
+2. Adjacent: other taxes, trade, fees, foreign exchange, borders and transport, product quality, food safety and chemicals; plus national acts that two or more tier 1 documents cite.
 3. Everything else. Stays in the store, never retrieved for the customs bot.
 
 ### Force
