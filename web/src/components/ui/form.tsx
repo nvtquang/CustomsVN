@@ -8,10 +8,10 @@ import type {
 import { cn } from "@/lib/utils";
 
 const field =
-  "w-full rounded-md border border-input bg-surface px-2.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50";
+  "w-full rounded-md border border-input bg-surface px-3 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50";
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(field, "h-9", className)} {...props} />;
+  return <input className={cn(field, "h-10", className)} {...props} />;
 }
 
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -19,7 +19,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 }
 
 export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cn(field, "h-9 pr-8", className)} {...props} />;
+  return <select className={cn(field, "h-10 pr-8", className)} {...props} />;
 }
 
 export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {

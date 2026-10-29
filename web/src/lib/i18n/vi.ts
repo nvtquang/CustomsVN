@@ -213,6 +213,7 @@ const vi = {
     dropped: "{{n}} nhận định bị loại vì trích dẫn không khớp nguyên văn",
     refused: "Không đủ căn cứ để trả lời",
     refusalTry: "Bạn có thể thử:",
+    gaps: "Chưa tìm được căn cứ trong các văn bản đang có",
     stopped: "Đã dừng — các nhận định ở trên đã được kiểm chứng.",
     verified: "Trích dẫn đã kiểm chứng nguyên văn",
     sources: "Căn cứ",
@@ -384,7 +385,7 @@ const vi = {
     submit: "Đăng nhập",
     wrong: "Sai email hoặc mật khẩu.",
     tooMany: "Thử sai quá nhiều lần. Thử lại sau {{s}} giây.",
-    hint: "Lần chạy đầu, máy chủ tạo tài khoản admin và in mật khẩu ra log một lần. Quên mật khẩu: chạy customsvn user passwd -email <email>.",
+    hint: "Quên mật khẩu: nhờ quản trị viên đặt lại, hoặc chạy customsvn user passwd -email <email> -password <mật khẩu mới>.",
     logout: "Đăng xuất",
     account: "Tài khoản",
     roles: {
@@ -514,6 +515,7 @@ const vi = {
       prep: "Prep",
       ingest: "Ingest",
       embed: "Embed",
+      crawl: "Crawl vbpl.vn",
     },
     status: {
       queued: "Chờ",
@@ -536,11 +538,36 @@ const vi = {
       prep: "Dựng lại corpus hải quan từ thư mục dữ liệu luatdo (khoảng một phút). Không dừng được giữa chừng.",
       ingest: "Nạp kết quả prep vào cơ sở dữ liệu, tạo phiên bản corpus mới và áp dụng ngay cho câu trả lời.",
       embed: "Tính embedding cho chunk mới hoặc đã đổi. Tốn phí API theo số chunk.",
+      crawl:
+        "Lấy văn bản mới và trạng thái hiệu lực từ vbpl.vn, rồi chạy luatdo, prep, ingest và embed. Mất từ vài phút đến khoảng một giờ.",
     },
     by: "bởi {{user}}",
     cancel: "Hủy",
     log: "Log của job",
     noLog: "Chưa có log.",
+  },
+  crawl: {
+    title: "Cập nhật định kỳ từ vbpl.vn",
+    text: "Lấy văn bản mới ban hành thuộc phạm vi hải quan và lĩnh vực liên quan, kiểm tra lại hiệu lực của các văn bản đang dùng, rồi ghép vào dữ liệu nền từ Hugging Face.",
+    missing:
+      "Máy chủ này chưa cài crawler của dataset (biến CUSTOMSVN_CRAWLER). Image Docker có sẵn; khi chạy ngoài Docker xem docs/crawl.md.",
+    enabled: "Tự chạy theo lịch",
+    every: "Tần suất",
+    weekly: "Hằng tuần",
+    monthly: "Hằng tháng",
+    day: "Ngày trong tháng",
+    weekday: "Ngày",
+    hour: "Giờ",
+    maxPages: "Số trang danh mục",
+    save: "Lưu lịch",
+    runNow: "Chạy ngay",
+    help: {
+      weekly:
+        "Mỗi trang danh mục có 100 văn bản mới nhất. Mỗi tuần kiểm tra lại khoảng 1/4 văn bản trong phạm vi, nên sau một tháng mọi trạng thái hiệu lực đều được cập nhật.",
+      monthly:
+        "Mỗi trang danh mục có 100 văn bản mới nhất. Mỗi lần chạy kiểm tra lại hiệu lực của toàn bộ văn bản trong phạm vi (khoảng 13 nghìn văn bản, vài giờ).",
+    },
+    days: { 0: "Chủ nhật", 1: "Thứ hai", 2: "Thứ ba", 3: "Thứ tư", 4: "Thứ năm", 5: "Thứ sáu", 6: "Thứ bảy" },
   },
   review: {
     title: "Review feedback",
@@ -865,11 +892,41 @@ const vi = {
     account: "Hồ sơ và mật khẩu",
     models: "Quản lý model",
     knowledge: "Kiến thức và truy xuất",
+    prompts: "System prompt",
     integrations: "Kết nối MCP và API",
     config: "Xuất/nhập cấu hình",
     themeText: "Sáng, tối, hoặc theo cài đặt của máy.",
     langText: "Ngôn ngữ của giao diện.",
     shortcutsText: "Dùng được ở mọi màn hình.",
+  },
+  prompts: {
+    title: "System prompt",
+    subtitle:
+      "Hướng dẫn gửi cho model ở từng bước trả lời. Đã điền sẵn bản mặc định; sửa rồi bấm Lưu, câu hỏi tiếp theo dùng ngay bản mới.",
+    compose: {
+      title: "Viết câu trả lời",
+      text: "Cách model viết câu trả lời từ các điều khoản tìm được: giọng văn, cấu trúc, mức chi tiết.",
+    },
+    agent: {
+      title: "Agent tra cứu",
+      text: "Cách model gọi công cụ để tìm thêm điều khoản trước khi trả lời.",
+    },
+    router: {
+      title: "Phân loại câu hỏi",
+      text: "Dùng khi có model phân loại: xếp câu hỏi vào loại nào, khi nào hỏi lại người dùng.",
+    },
+    rewrite: {
+      title: "Viết lại câu hỏi nối tiếp",
+      text: "Biến câu hỏi nối tiếp trong một cuộc trò chuyện thành câu hỏi đầy đủ.",
+    },
+    custom: "Đã sửa",
+    default: "Mặc định",
+    reset: "Khôi phục mặc định",
+    contract: "Phần cố định hệ thống tự thêm vào cuối (không sửa được)",
+    save: "Lưu",
+    discard: "Bỏ thay đổi",
+    saved: "Đã lưu",
+    note: "Định dạng đầu ra và quy tắc an toàn luôn được thêm vào; mọi trích dẫn vẫn được kiểm chứng nguyên văn.",
   },
   models: {
     title: "Quản lý model",

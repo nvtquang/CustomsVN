@@ -37,8 +37,8 @@
   --force-unknown-bg: oklch(0.94 0.005 260);
 
   --radius: 0.5rem;
-  --sidebar-width: 15rem;
-  --panel-width: 26rem;
+  --sidebar-width: 16.5rem;
+  --panel-width: 28rem;
 }
 
 .dark {
@@ -104,13 +104,16 @@
   --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  /* Type scale: 12, 13, 14, 16, 18, 22 px. Dense data screens live at 13. */
+  /*
+   * Type scale on a 16px root: 12, 13, 15, 16, 18, 24 px. Body text and
+   * controls are 15; dense data screens live at 13; nothing reads below 12.
+   */
   --text-2xs: 0.75rem;
   --text-xs: 0.8125rem;
-  --text-sm: 0.875rem;
+  --text-sm: 0.9375rem;
   --text-base: 1rem;
   --text-lg: 1.125rem;
-  --text-xl: 1.375rem;
+  --text-xl: 1.5rem;
 }
 
 @layer base {
@@ -122,8 +125,13 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-size: 14px;
     -webkit-font-smoothing: antialiased;
+  }
+  /* The root keeps the browser's 16px so every rem size, text and spacing
+     alike, is the size it was designed at; a 14px root shrank them all. */
+  body {
+    font-size: var(--text-sm);
+    line-height: 1.55;
   }
   ::selection {
     background: var(--accent);

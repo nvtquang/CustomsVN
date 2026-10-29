@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/form";
 import { useMe } from "@/features/auth/use-me";
+import { LanguageCard, ThemeCard } from "@/features/settings/appearance";
 import { authApi } from "@/lib/api/admin";
 
 export const Route = createFileRoute("/settings/account")({ component: AccountPage });
@@ -31,7 +32,7 @@ function AccountPage() {
     if (!mismatch && next.length >= 10) change.mutate();
   };
   return (
-    <div className="mx-auto max-w-xl space-y-4 p-4 lg:p-6">
+    <div className="mx-auto max-w-3xl space-y-4 p-4 lg:p-6">
       <div>
         <h1 className="text-xl font-semibold">{t("account.title")}</h1>
         {me && (
@@ -45,7 +46,7 @@ function AccountPage() {
           <CardTitle>{t("account.changePassword")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="space-y-3" onSubmit={submit}>
+          <form className="max-w-md space-y-3" onSubmit={submit}>
             <Field label={t("account.current")}>
               <Input
                 type="password"
@@ -97,6 +98,9 @@ function AccountPage() {
           </form>
         </CardContent>
       </Card>
+      {/* The look of the app belongs to the person as much as the password does. */}
+      <ThemeCard />
+      <LanguageCard />
     </div>
   );
 }

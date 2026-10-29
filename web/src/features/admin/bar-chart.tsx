@@ -74,7 +74,7 @@ export function BarChart({
               x={k === 0 ? pad.left : w - pad.right}
               y={h - 4}
               textAnchor={k === 0 ? "start" : "end"}
-              className="fill-muted-foreground text-[11px]"
+              className="fill-muted-foreground text-2xs"
             >
               {days[k]?.slice(5)}
             </text>

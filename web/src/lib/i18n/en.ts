@@ -214,6 +214,7 @@ const en: Messages = {
     dropped: "{{n}} claims dropped because their quotes did not match verbatim",
     refused: "Not enough grounds to answer",
     refusalTry: "You could try:",
+    gaps: "No grounds found in the documents on hand",
     stopped: "Stopped — the claims above were verified.",
     verified: "Quote verified verbatim",
     sources: "Grounds",
@@ -387,7 +388,7 @@ const en: Messages = {
     submit: "Log in",
     wrong: "Wrong email or password.",
     tooMany: "Too many attempts. Try again in {{s}} seconds.",
-    hint: "On first start the server creates an admin account and prints its password to the log once. Forgot it: run customsvn user passwd -email <email>.",
+    hint: "Forgot your password: ask an admin to reset it, or run customsvn user passwd -email <email> -password <new password>.",
     logout: "Log out",
     account: "Account",
     roles: {
@@ -516,6 +517,7 @@ const en: Messages = {
       prep: "Prep",
       ingest: "Ingest",
       embed: "Embed",
+      crawl: "Crawl vbpl.vn",
     },
     status: {
       queued: "Queued",
@@ -538,11 +540,36 @@ const en: Messages = {
       prep: "Rebuilds the customs corpus from the luatdo data directory (about a minute). It cannot be stopped halfway.",
       ingest: "Loads the prep output into the database as a new corpus version, used by answers at once.",
       embed: "Embeds new and changed chunks. Costs API fees by the chunk.",
+      crawl:
+        "Fetches new documents and statuses from vbpl.vn, then runs luatdo, prep, ingest and embed. A few minutes to about an hour.",
     },
     by: "by {{user}}",
     cancel: "Cancel",
     log: "Job log",
     noLog: "No log yet.",
+  },
+  crawl: {
+    title: "Scheduled update from vbpl.vn",
+    text: "Fetches newly issued documents in the customs scope and related fields, checks the force of the documents in use again, and merges them into the Hugging Face base data.",
+    missing:
+      "This server does not have the dataset's crawler (CUSTOMSVN_CRAWLER). The Docker image has it; outside Docker see docs/crawl.md.",
+    enabled: "Run on schedule",
+    every: "Frequency",
+    weekly: "Weekly",
+    monthly: "Monthly",
+    day: "Day of month",
+    weekday: "Day",
+    hour: "Time",
+    maxPages: "Catalogue pages",
+    save: "Save schedule",
+    runNow: "Run now",
+    help: {
+      weekly:
+        "A catalogue page holds the 100 newest documents. Each week about a quarter of the in-scope documents are checked again, so every status is current within a month.",
+      monthly:
+        "A catalogue page holds the 100 newest documents. Each run checks the force of every in-scope document again (about 13 thousand, a few hours).",
+    },
+    days: { 0: "Sunday", 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday" },
   },
   review: {
     title: "Feedback review",
@@ -867,11 +894,38 @@ const en: Messages = {
     account: "Profile and password",
     models: "Models",
     knowledge: "Knowledge and retrieval",
+    prompts: "System prompts",
     integrations: "MCP and API",
     config: "Export/import configuration",
     themeText: "Light, dark, or follow the device.",
     langText: "The language of the interface.",
     shortcutsText: "Available on every screen.",
+  },
+  prompts: {
+    title: "System prompts",
+    subtitle:
+      "The instructions sent to the model at each step of an answer. The defaults are filled in; edit and save, and the next question uses them.",
+    compose: {
+      title: "Writing the answer",
+      text: "How the model writes the answer from the provisions found: tone, structure, detail.",
+    },
+    agent: { title: "Research agent", text: "How the model calls tools to find more provisions before answering." },
+    router: {
+      title: "Question classifier",
+      text: "Used when a classifier model is set: which kind a question is, and when to ask the user back.",
+    },
+    rewrite: {
+      title: "Rewriting follow-ups",
+      text: "Turns a follow-up in a conversation into a question that stands alone.",
+    },
+    custom: "Edited",
+    default: "Default",
+    reset: "Restore default",
+    contract: "Fixed part the system appends (not editable)",
+    save: "Save",
+    discard: "Discard changes",
+    saved: "Saved",
+    note: "The output format and the safety rules are always appended; every quote is still verified word for word.",
   },
   models: {
     title: "Models",

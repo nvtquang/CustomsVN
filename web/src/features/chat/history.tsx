@@ -15,11 +15,11 @@ export function History() {
   return (
     <div className="space-y-1.5">
       <div className="relative">
-        <Search className="pointer-events-none absolute top-2 left-2 size-3.5 text-muted-foreground" />
+        <Search className="pointer-events-none absolute top-2.5 left-2 size-3.5 text-muted-foreground" />
         <Input
           aria-label={t("history.search")}
           placeholder={t("history.search")}
-          className="h-7 pl-7 text-xs"
+          className="h-8 pl-7 text-xs"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onClick={(e) => e.stopPropagation()}
@@ -65,7 +65,7 @@ function Item({ c }: { c: Conversation }) {
             rename.mutate();
           }}
         >
-          <Input autoFocus className="h-7 text-xs" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <Input autoFocus className="h-8 text-xs" value={title} onChange={(e) => setTitle(e.target.value)} />
           <button type="submit" aria-label={t("history.save")} className="cursor-pointer p-1 text-muted-foreground">
             <Check className="size-3.5" />
           </button>
@@ -87,7 +87,7 @@ function Item({ c }: { c: Conversation }) {
         to="/c/$id"
         params={{ id: String(c.id) }}
         className={cn(
-          "block truncate rounded-md px-2.5 py-1.5 pr-12 text-xs hover:bg-muted",
+          "block truncate rounded-md px-2.5 py-1.5 pr-12 text-sm hover:bg-muted",
           active && "bg-accent font-medium text-accent-foreground",
         )}
         title={c.title}
