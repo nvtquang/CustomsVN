@@ -48,6 +48,15 @@ type Card struct {
 	Data any    `json:"data"`
 }
 
+// Empty reports whether a card found nothing, such as an HS lookup with no
+// line. An empty card tells the reader nothing and answers no question.
+func (c Card) Empty() bool {
+	if hs, ok := c.Data.(*HSResult); ok {
+		return len(hs.Lines) == 0
+	}
+	return false
+}
+
 // Result is what one tool call produced.
 type Result struct {
 	// Text is what the model reads: compact, and marked as data.

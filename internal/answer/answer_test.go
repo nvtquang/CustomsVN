@@ -113,7 +113,7 @@ func TestFollowUpIsRewritten(t *testing.T) {
 	if res.Standalone != "Người khai hải quan có quyền yêu cầu xác định trước mã số không?" || len(res.Claims) != 1 {
 		t.Errorf("%+v", res)
 	}
-	if len(fake.Calls) != 2 || fake.Calls[0].System != rewriteSystem {
+	if len(fake.Calls) != 2 || fake.Calls[0].System != DefaultPrompts().rewrite() {
 		t.Errorf("calls %d", len(fake.Calls))
 	}
 }
@@ -140,5 +140,44 @@ func TestVerbatim(t *testing.T) {
 		if got := Verbatim(src, q); got != want {
 			t.Errorf("Verbatim(%q) = %v", q, got)
 		}
+	}
+}
+
+func TestGapsAreShownBesideClaims(t *testing.T) {
+	reply := `{"claim": "Có, người khai được yêu cầu xác định trước mã số.", "citations": [{"source": 1, "quote": "Yêu cầu cơ quan hải quan xác định trước mã số, xuất xứ, trị giá hải quan đối với hàng hóa"}]}
+{"gap": "Thời hạn cơ quan hải quan trả lời"}
+{"gap": "Xem thêm tại https://evil.example"}
+{"end": true}`
+	a, _ := answerer(reply)
+	evs, emit := collect(t)
+	res, err := a.Answer(context.Background(), Input{Question: "Có được xác định trước mã số không, bao lâu có kết quả?"}, emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Claims) != 1 || len(res.Gaps) != 1 || res.Gaps[0] != "Thời hạn cơ quan hải quan trả lời" || len(res.Dropped) != 1 {
+		t.Fatalf("claims %d gaps %q dropped %+v", len(res.Claims), res.Gaps, res.Dropped)
+	}
+	if !strings.HasSuffix(res.Markdown(), "Chưa có căn cứ: Thời hạn cơ quan hải quan trả lời") {
+		t.Errorf("markdown %q", res.Markdown())
+	}
+	gap := false
+	for _, e := range *evs {
+		gap = gap || e.Type == "gap"
+	}
+	if !gap {
+		t.Error("no gap event")
+	}
+}
+
+func TestStoredPromptsReplaceTheDefaultsButNotTheContract(t *testing.T) {
+	a, fake := answerer(`{"end": true}`)
+	a.Prompts = func(context.Context) Prompts { return Prompts{Compose: "Trả lời thật ngắn."} }
+	_, emit := collect(t)
+	if _, err := a.Answer(context.Background(), Input{Question: "Người khai hải quan có quyền gì?"}, emit); err != nil {
+		t.Fatal(err)
+	}
+	sys := fake.Calls[len(fake.Calls)-1].System
+	if !strings.HasPrefix(sys, "Trả lời thật ngắn.") || !strings.Contains(sys, `{"end": true}`) || strings.Contains(sys, "chuyên viên tư vấn") {
+		t.Errorf("compose system %q", sys)
 	}
 }

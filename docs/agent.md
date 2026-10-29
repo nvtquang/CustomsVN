@@ -1,17 +1,17 @@
 # Agent and customs tools
 
-Phase 3 of [PLAN.md](PLAN.md). The chat answers multi-step questions with tools, shows document status, amendment history and HS lines as cards built from the data, asks back when a question is ambiguous, and is reachable from other programs over MCP and an OpenAI-compatible API.
+Phase 3 of [PLAN.md](PLAN.md). The chat answers multi-step questions with tools, shows document status and amendment history as cards built from the data, asks back when a question is ambiguous, and is reachable from other programs over MCP and an OpenAI-compatible API.
 
 ## How a question flows
 
 `internal/answer` (after the rewrite step of [chat.md](chat.md)):
 
 1. **Route.** Rules on the words of the question come first: an HS code or "phân loại"/"mã HS" → `hs`; a document named with "còn hiệu lực" → `status`; a document named with "sửa đổi", "lịch sử", "hợp nhất" → `amendments`; "thủ tục", "hồ sơ", "trình tự" → `procedure`; otherwise `regulation`. When a `router` model is configured (a cheap one), it may move a `regulation` or `procedure` question to another intent, refuse it as `out_of_scope`, or ask back (`clarify`) when the answer depends on the import regime, the origin or agreement, or who imports (company, person, baggage, gift). The model never overrides an explicit HS or status question, and when it fails, the rules stand.
-2. **Plan.** Code calls the tools the intent needs: `lookup_hs`, `get_document_status`, `get_amendments`, and `get_provision` for every provision named in the question (up to three). These produce **cards**, which are shown as they are, and sources for the composer.
-3. **Agent loop.** For `regulation` and `procedure` questions, the answer model may call tools itself, up to 6 turns: search again with other wording, fetch a provision, check a status. Every call is a **step** in the trace the reader can unfold. A provider that cannot call tools (a luatdo routes file) just ends the loop.
+2. **Plan.** Code calls the tools the intent needs: `get_document_status`, `get_amendments`, and `get_provision` for every provision named in the question (up to three). An answer never looks up an HS code (owner's decision, 2026-10-29): a question about goods or a code is answered with the rules that apply to them and the provisions behind them; HS lines are for the HS screen, MCP and the API. These produce **cards**, which are shown as they are, and sources for the composer.
+3. **Agent loop.** For `regulation`, `procedure` and `hs` questions, with every tool but `lookup_hs`, the answer model may call tools itself, up to 6 turns: search again with other wording, fetch a provision, check a status. Every call is a **step** in the trace the reader can unfold. A provider that cannot call tools (a luatdo routes file) just ends the loop.
 4. **Compose and verify** as in Phase 2, over the named provisions first, then the search, then what the agent found (12 sources at most). The composer is told which cards the reader already sees, so it does not restate a status or a timeline in words it cannot cite.
 
-An answer made only of cards (a status question, an HS lookup) is a valid answer: the cards are data from the database, labelled "Từ dữ liệu", each with its source.
+An answer made only of cards (a status or amendments question) is a valid answer when a card found something and the composer neither refused nor wrote a claim that failed: the cards are data from the database, labelled "Từ dữ liệu", each with its source. Otherwise the question asked more than the cards say, and the reader sees the refusal beside them. The composer may end with up to three `gap` lines naming parts of the question no source answers; they carry no citation, state no rule, and show as "Chưa tìm được căn cứ".
 
 The as-of day can be set per conversation (the date beside the input box). Every tool judges force on that day, by the dates rather than today's label: NĐ 128/2020/NĐ-CP is "không còn hiệu lực" today and "còn hiệu lực" as of 2024-01-01.
 

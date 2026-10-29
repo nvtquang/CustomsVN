@@ -17,7 +17,7 @@ import {
   type Step,
 } from "@/lib/api/chat";
 import { CardView, StepsView } from "./cards";
-import { ClaimView, ErrorView, Feedback, RefusalView, RegenerateButton, SourcesList } from "./message";
+import { ClaimView, ErrorView, Feedback, GapsView, RefusalView, RegenerateButton, SourcesList } from "./message";
 
 interface Pending {
   question: string;
@@ -25,6 +25,7 @@ interface Pending {
   sources?: number;
   rewritten?: string;
   claims: Claim[];
+  gaps: string[];
   dropped: number;
   refusal?: Refusal;
   clarify?: string;
@@ -72,6 +73,7 @@ export function ChatView({ id }: { id?: number }) {
     setPending({
       question: body.question ?? "",
       claims: [],
+      gaps: [],
       steps: [],
       cards: [],
       dropped: 0,
@@ -96,6 +98,8 @@ export function ChatView({ id }: { id?: number }) {
             return { ...p, clarify: e.text };
           case "claim":
             return { ...p, claims: [...p.claims, e.claim] };
+          case "gap":
+            return { ...p, gaps: [...p.gaps, e.text] };
           case "dropped":
             return { ...p, dropped: p.dropped + 1 };
           case "refusal":
@@ -172,6 +176,7 @@ export function ChatView({ id }: { id?: number }) {
                 {pending.claims.map((c, i) => (
                   <ClaimView key={i} claim={c} />
                 ))}
+                <GapsView gaps={pending.gaps} />
                 {streaming && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" />
@@ -288,6 +293,7 @@ export function AssistantStored({
       {m.cards?.map((c, i) => <CardView key={i} card={c} />)}
       {m.clarify && <ClarifyView text={m.clarify} />}
       {m.refusal ? <RefusalView refusal={m.refusal} /> : m.claims?.map((c, i) => <ClaimView key={i} claim={c} />)}
+      {!m.refusal && m.gaps && <GapsView gaps={m.gaps} />}
       {!!m.dropped && <p className="text-2xs text-muted-foreground">{t("chat.dropped", { n: m.dropped })}</p>}
       {m.claims && m.claims.length > 0 && <SourcesList claims={m.claims} />}
       {m.error && <ErrorView kind="server" message={m.error} />}

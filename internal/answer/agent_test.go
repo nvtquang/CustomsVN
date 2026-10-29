@@ -123,3 +123,49 @@ func TestNamedProvisionIsFetchedByThePlan(t *testing.T) {
 		t.Error("the named provision is not source 1")
 	}
 }
+
+func TestAnswersNeverLookUpHS(t *testing.T) {
+	a, fake := answerer(`{"end": true}`)
+	a.Tools = &tools.Toolset{Engine: a.Engine}
+	a.ToolLoop = true
+	args, _ := json.Marshal(map[string]string{"query": "6506.10.10"})
+	fake.ToolTurns = [][]llm.ToolCall{{{ID: "c1", Name: tools.LookupHS, Arguments: args}}}
+	_, emit := collect(t)
+	res, err := a.Answer(context.Background(), Input{Question: "Nhập mũ bảo hiểm mã HS 6506.10.10 phải công bố hợp quy theo gì?"}, emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The plan does not look the code up, the model is not offered the
+	// tool, and a call it makes anyway fails without a card.
+	if res.Intent.Kind != IntentHS || len(res.Steps) != 1 || res.Steps[0].By != "model" || res.Steps[0].Error == "" || len(res.Cards) != 0 {
+		t.Errorf("intent %s steps %+v cards %d", res.Intent.Kind, res.Steps, len(res.Cards))
+	}
+	for _, tl := range fake.Calls[0].Tools {
+		if tl.Name == tools.LookupHS {
+			t.Error("lookup_hs offered to the answer's agent")
+		}
+	}
+}
+
+func TestCardsAnswerOnlyWhenTheyFoundSomething(t *testing.T) {
+	empty := tools.Card{Type: "hs", Data: &tools.HSResult{}}
+	line := tools.Card{Type: "hs", Data: &tools.HSResult{Lines: []tools.HSLine{{Code: "6506.10.10"}}}}
+	for _, c := range []struct {
+		kind  string
+		cards []tools.Card
+		tried bool
+		want  bool
+	}{
+		{IntentStatus, []tools.Card{empty}, false, false},
+		{IntentHS, []tools.Card{line}, false, false},
+		{IntentRegulation, []tools.Card{line}, false, false},
+		{IntentStatus, []tools.Card{{Type: "status"}}, false, true},
+		// The composer refused or failed: the question asked more than the card.
+		{IntentStatus, []tools.Card{{Type: "status"}}, true, false},
+	} {
+		res := &Result{Intent: Intent{Kind: c.kind}, Cards: c.cards}
+		if got := cardsAnswer(res, c.tried); got != c.want {
+			t.Errorf("%s %d cards tried=%v: got %v", c.kind, len(c.cards), c.tried, got)
+		}
+	}
+}

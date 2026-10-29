@@ -70,7 +70,7 @@ type Refusal struct {
 
 // Event is one server-sent event of an answer in progress.
 type Event struct {
-	Type    string      `json:"type"` // status, rewrite, intent, step, card, clarify, claim, dropped, refusal
+	Type    string      `json:"type"` // status, rewrite, intent, step, card, clarify, claim, gap, dropped, refusal
 	Stage   string      `json:"stage,omitempty"`
 	Text    string      `json:"text,omitempty"`
 	Intent  *Intent     `json:"intent,omitempty"`
@@ -89,7 +89,10 @@ type Result struct {
 	AsOf       string    `json:"as_of"`
 	Claims     []Claim   `json:"claims"`
 	Dropped    []Dropped `json:"dropped,omitempty"`
-	Refusal    *Refusal  `json:"refusal,omitempty"`
+	// Gaps name the parts of the question the sources do not answer. They
+	// state an absence, never a rule, and carry no citation.
+	Gaps    []string `json:"gaps,omitempty"`
+	Refusal *Refusal `json:"refusal,omitempty"`
 	// Clarify is a question back to the reader when the answer depends on
 	// something the question left out.
 	Clarify       string               `json:"clarify,omitempty"`
@@ -136,6 +139,9 @@ func (r *Result) Markdown() string {
 			fmt.Fprintf(&b, " [%d]", n)
 		}
 	}
+	for _, g := range r.Gaps {
+		b.WriteString("\n\nChưa có căn cứ: " + g)
+	}
 	return b.String()
 }
 
@@ -166,6 +172,9 @@ type Answerer struct {
 	// ToolLoop lets the answer model call tools before composing, up to
 	// MaxSteps times, for questions about rules and procedures.
 	ToolLoop bool
+	// Prompts returns the stored system prompts; nil, or an empty prompt,
+	// means the default.
+	Prompts func(context.Context) Prompts
 	// K is how many chunks the search hands the composer.
 	K   int
 	Now func() time.Time
@@ -203,6 +212,10 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	if router == nil || !router.Has(llm.RoleAnswer) {
 		return nil, ErrNoModel
 	}
+	prompts := DefaultPrompts()
+	if a.Prompts != nil {
+		prompts = a.Prompts(ctx).Fill()
+	}
 
 	// 1. A follow-up becomes a question that stands alone.
 	res.Standalone = res.Question
@@ -219,7 +232,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		for _, h := range lastTurns(in.History, 6) {
 			fmt.Fprintf(&hist, "%s: %s\n", map[string]string{"user": "Người dùng", "assistant": "Trợ lý"}[h.Role], truncate(h.Content, 1200))
 		}
-		resp, err := router.Stream(ctx, role, llm.Request{System: rewriteSystem, MaxTokens: 300,
+		resp, err := router.Stream(ctx, role, llm.Request{System: prompts.rewrite(), MaxTokens: 300,
 			Messages: []llm.Message{{Role: "user", Content: "CUỘC TRÒ CHUYỆN:\n" + fence(hist.String()) + "\nCÂU HỎI CUỐI:\n<question>\n" + fence(res.Question) + "\n</question>"}}}, nil)
 		if err != nil {
 			return nil, err
@@ -247,7 +260,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 
 	// 2. Route. Rules first, then the router model if one is configured.
 	t := time.Now()
-	intent, usage := a.route(ctx, router, res.Standalone, found)
+	intent, usage := a.route(ctx, router, prompts, res.Standalone, found)
 	res.Intent = intent
 	addUsage(res, llm.RoleRouter, usage)
 	res.TimingMS["route"] = ms(t)
@@ -268,7 +281,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	}
 
 	// 3. Gather sources and cards.
-	hits, err := a.gather(ctx, router, res, found, emit)
+	hits, err := a.gather(ctx, router, prompts, res, found, emit)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +289,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		res.Retrieved = append(res.Retrieved, h.ChunkID)
 	}
 	if len(hits) == 0 {
-		if len(res.Cards) > 0 {
+		if cardsAnswer(res, false) {
 			return res, nil
 		}
 		return a.refuse(res, emit, &Refusal{Code: "no_sources",
@@ -305,6 +318,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			} `json:"citations"`
 			Refuse      string   `json:"refuse"`
 			Suggestions []string `json:"suggestions"`
+			Gap         string   `json:"gap"`
 			End         bool     `json:"end"`
 		}
 		if err := json.Unmarshal([]byte(raw), &out); err != nil {
@@ -312,6 +326,16 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			return emit(Event{Type: "dropped", Dropped: &res.Dropped[len(res.Dropped)-1]})
 		}
 		switch {
+		case out.Gap != "" && out.Claim == "":
+			// A gap is the model's free text: short, with nothing to click,
+			// and at most three of them.
+			g := strings.TrimSpace(selfMarker.ReplaceAllString(out.Gap, ""))
+			if g == "" || len([]rune(g)) > 300 || !Unlinked(g) || len(res.Gaps) == 3 {
+				res.Dropped = append(res.Dropped, Dropped{Text: truncate(out.Gap, 300), Reason: "gap"})
+				return emit(Event{Type: "dropped", Dropped: &res.Dropped[len(res.Dropped)-1]})
+			}
+			res.Gaps = append(res.Gaps, g)
+			return emit(Event{Type: "gap", Text: g})
 		case out.Refuse != "":
 			refusal = &Refusal{Code: "out_of_scope", Reason: out.Refuse}
 			if !Unlinked(out.Refuse) {
@@ -373,7 +397,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		}
 		return emit(Event{Type: "claim", Claim: &res.Claims[len(res.Claims)-1]})
 	}
-	resp, err := router.Stream(ctx, llm.RoleAnswer, llm.Request{System: composeSystem, MaxTokens: 3000,
+	resp, err := router.Stream(ctx, llm.RoleAnswer, llm.Request{System: prompts.compose(), MaxTokens: 3000,
 		Messages: []llm.Message{{Role: "user", Content: composeUser(res.Standalone, hits, asOf, cardsNote(res.Cards))}}},
 		func(delta string) error {
 			for {
@@ -407,7 +431,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	switch {
 	case len(res.Claims) > 0:
 		return res, nil
-	case len(res.Cards) > 0:
+	case cardsAnswer(res, refusal != nil || len(res.Dropped) > 0):
 		// The cards answer from the data; no claim was needed beside them.
 		return res, nil
 	case refusal != nil:

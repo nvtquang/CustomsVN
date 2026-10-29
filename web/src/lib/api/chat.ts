@@ -126,6 +126,7 @@ export interface Message {
   intent?: Intent;
   steps?: Step[];
   cards?: Card[];
+  gaps?: string[];
   dropped?: number;
   as_of_date?: string;
   corpus_version?: number;
@@ -152,6 +153,7 @@ export type ChatEvent =
   | { type: "clarify"; text: string }
   | { type: "rewrite"; text: string }
   | { type: "claim"; claim: Claim }
+  | { type: "gap"; text: string }
   | { type: "dropped"; dropped: { text: string; reason: string } }
   | { type: "refusal"; refusal: Refusal }
   | {

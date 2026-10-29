@@ -49,6 +49,7 @@ type Message struct {
 	Intent    *answer.Intent  `json:"intent,omitempty"`
 	Steps     []answer.Step   `json:"steps,omitempty"`
 	Cards     []tools.Card    `json:"cards,omitempty"`
+	Gaps      []string        `json:"gaps,omitempty"`
 	Dropped   int             `json:"dropped,omitempty"`
 	AsOf      string          `json:"as_of_date,omitempty"`
 	Corpus    *int64          `json:"corpus_version,omitempty"`
@@ -104,6 +105,7 @@ type trace struct {
 	Standalone   string             `json:"standalone"`
 	Retrieved    []string           `json:"retrieved"`
 	Dropped      []answer.Dropped   `json:"dropped,omitempty"`
+	Gaps         []string           `json:"gaps,omitempty"`
 	Refusal      *answer.Refusal    `json:"refusal,omitempty"`
 	Provider     string             `json:"provider,omitempty"`
 	Model        string             `json:"model,omitempty"`
@@ -129,7 +131,7 @@ func (s *Store) AddAnswer(ctx context.Context, conv int64, res *answer.Result, f
 		cards, _ = json.Marshal(res.Cards)
 	}
 	intent := res.Intent
-	tr, _ := json.Marshal(trace{Standalone: res.Standalone, Retrieved: res.Retrieved, Dropped: res.Dropped, Refusal: res.Refusal,
+	tr, _ := json.Marshal(trace{Standalone: res.Standalone, Retrieved: res.Retrieved, Dropped: res.Dropped, Gaps: res.Gaps, Refusal: res.Refusal,
 		Provider: res.Provider, Model: res.Model, TimingMS: res.TimingMS, FirstClaimMS: res.FirstClaimMS, Error: failure,
 		Clarify: res.Clarify, Intent: &intent, Steps: res.Steps})
 	var version *int64
@@ -302,7 +304,7 @@ func (s *Store) Get(ctx context.Context, id int64) (*Conversation, []Message, er
 		if len(tr) > 0 {
 			var t trace
 			if json.Unmarshal(tr, &t) == nil {
-				m.Refusal, m.Dropped, m.Error = t.Refusal, len(t.Dropped), t.Error
+				m.Refusal, m.Dropped, m.Error, m.Gaps = t.Refusal, len(t.Dropped), t.Error, t.Gaps
 				m.Clarify, m.Intent, m.Steps = t.Clarify, t.Intent, t.Steps
 			}
 		}

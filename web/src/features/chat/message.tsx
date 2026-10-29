@@ -92,6 +92,24 @@ export function SourcesList({ claims }: { claims: Claim[] }) {
   );
 }
 
+/** The parts of the question no source answers, said as such. */
+export function GapsView({ gaps }: { gaps: string[] }) {
+  const { t } = useTranslation();
+  if (gaps.length === 0) return null;
+  return (
+    <div className="space-y-1 rounded-md border border-dashed p-3 text-sm">
+      <div className="flex items-center gap-2 font-medium text-force-partly">
+        <CircleSlash className="size-4" /> {t("chat.gaps")}
+      </div>
+      <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+        {gaps.map((g) => (
+          <li key={g}>{g}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function RefusalView({ refusal }: { refusal: Refusal }) {
   const { t } = useTranslation();
   return (
