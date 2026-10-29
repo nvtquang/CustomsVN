@@ -110,7 +110,12 @@ const PRESETS: Preset[] = [
     base: "https://openrouter.ai/api/v1",
     env: "OPENROUTER_API_KEY",
     keyUrl: "https://openrouter.ai/keys",
-    types: ["chat"],
+    // OpenRouter serves /embeddings and a Cohere-style /rerank under the same base.
+    types: ["chat", "embedding", "rerank"],
+    suggest: {
+      embedding: ["openai/text-embedding-3-large", "openai/text-embedding-3-small"],
+      rerank: ["cohere/rerank-v3.5"],
+    },
   },
   {
     id: "voyage",
