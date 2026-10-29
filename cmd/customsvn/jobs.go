@@ -23,7 +23,7 @@ import (
 // jobKinds are the data tasks the admin screen can start: the same work as
 // the prep, ingest and embed commands, with their output in the job's log.
 func jobKinds(cfg *config.Config, pool *pgxpool.Pool, e *search.Engine) map[string]jobs.Func {
-	return map[string]jobs.Func{
+	kinds := map[string]jobs.Func{
 		"prep": func(ctx context.Context, raw json.RawMessage, log io.Writer) error {
 			var p struct {
 				AsOf   string `json:"as_of"`
@@ -102,6 +102,8 @@ func jobKinds(cfg *config.Config, pool *pgxpool.Pool, e *search.Engine) map[stri
 			return err
 		},
 	}
+	kinds["crawl"] = crawlJob(cfg, pool, kinds)
+	return kinds
 }
 
 // afterJob loads a new corpus into the running server once an ingest has
@@ -109,7 +111,7 @@ func jobKinds(cfg *config.Config, pool *pgxpool.Pool, e *search.Engine) map[stri
 // part of a minute of CPU, so an ingest that changed nothing skips it.
 func afterJob(pool *pgxpool.Pool, e *search.Engine, ts *tools.Toolset) func(context.Context, string) error {
 	return func(ctx context.Context, kind string) error {
-		if kind != "ingest" {
+		if kind != "ingest" && kind != "crawl" { // a crawl ends with an ingest
 			return nil
 		}
 		var latest int64

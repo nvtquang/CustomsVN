@@ -36,6 +36,8 @@ type Options struct {
 	Prep string // customsvn prep output
 	Data string // luatdo data directory, for provisions and citations
 	Log  io.Writer
+
+	revision string // the th1nhng0 revision prep read, from its summary
 }
 
 // Result is what one ingest did.
@@ -82,11 +84,18 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (*Result, error)
 	}
 	var summary struct {
 		AsOf         string `json:"as_of"`
+		Revision     string `json:"revision"`
 		ChunksSHA256 string `json:"chunks_sha256"`
 	}
 	if err := store.ReadJSON(filepath.Join(opts.Prep, "summary", "chunks.json"), &summary); err != nil {
 		return nil, fmt.Errorf("read prep summary (run customsvn prep first): %w", err)
 	}
+	// The revision prep read, a crawl's or the pinned snapshot; a summary
+	// written before prep recorded it was read from the snapshot.
+	if summary.Revision == "" {
+		summary.Revision = prep.Revision
+	}
+	opts.revision = summary.Revision
 
 	chunks, err := readChunks(filepath.Join(opts.Prep, "customs", "chunks.jsonl"))
 	if err != nil {
@@ -167,7 +176,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (*Result, error)
 	} else {
 		err := tx.QueryRow(ctx, `INSERT INTO corpus_versions (as_of, source_revision, chunks_sha256, documents, chunks, added, changed, removed)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-			summary.AsOf, prep.Revision, summary.ChunksSHA256, len(docs), len(chunks), res.Added, res.Changed, res.Removed).Scan(&res.Version)
+			summary.AsOf, summary.Revision, summary.ChunksSHA256, len(docs), len(chunks), res.Added, res.Changed, res.Removed).Scan(&res.Version)
 		if err != nil {
 			return nil, err
 		}
@@ -423,7 +432,7 @@ func writeEdges(ctx context.Context, tx pgx.Tx, opts Options, docs []*docRow) (i
 			rows = append(rows, []any{d.ID, nil, *d.Consolidates, d.OfficialNumber, "cites", "vbhn", corpus.RelConsolidates, "Hợp nhất"})
 		}
 	}
-	rels, _, err := parse.Th1nhng0Relations(filepath.Join(opts.Data, "raw", "th1nhng0", prep.Revision))
+	rels, _, err := parse.Th1nhng0Relations(filepath.Join(opts.Data, "raw", "th1nhng0", opts.revision))
 	if err != nil {
 		return 0, fmt.Errorf("official relations: %w", err)
 	}

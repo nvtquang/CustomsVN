@@ -58,6 +58,8 @@ type Server struct {
 	Answers *evalx.AnswerRunner
 	// PrepDir is where prep writes, for the coverage report.
 	PrepDir string
+	// CrawlerDir is where the dataset's crawler is installed.
+	CrawlerDir string
 	// reloadMu serializes reloads: each reads the settings after the save
 	// that asked for it, so the last to finish holds the latest.
 	reloadMu sync.Mutex
@@ -166,6 +168,10 @@ func (s *Server) Handler(ctx context.Context) http.Handler {
 	mux.Handle("GET /api/settings/limits", s.admin(s.getLimits))
 	mux.Handle("PUT /api/settings/limits", s.admin(s.putLimits))
 	mux.Handle("GET /api/settings/export", s.admin(s.exportConfig))
+	mux.Handle("GET /api/settings/prompts", s.admin(s.getPrompts))
+	mux.Handle("GET /api/settings/crawl", s.admin(s.getCrawl))
+	mux.Handle("PUT /api/settings/crawl", s.admin(s.putCrawl))
+	mux.Handle("PUT /api/settings/prompts", s.admin(s.putPrompts))
 	mux.Handle("POST /api/settings/import", s.admin(s.importConfig))
 	mux.Handle("GET /api/admin/corpus", s.admin(s.adminCorpus))
 	mux.Handle("GET /api/admin/jobs", s.admin(s.listJobs))

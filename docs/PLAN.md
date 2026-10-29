@@ -14,7 +14,7 @@ CustomsVN là chatbot kiêm agent AI tra cứu pháp luật hải quan, mã ngu�
 | LLM | Dịch vụ cloud qua API key (Claude, các endpoint tương thích OpenAI) | LLM local bổ sung ở Phase 6 |
 | Giấy phép | MIT | Đồng bộ với luatdo |
 | Gold set | Chuyên gia hải quan soạn, gửi sau | Retrieval Testing có trong UI từ Phase 1 |
-| Crawl vbpl.vn | Làm sau v1.0 | Phase 6 |
+| Crawl vbpl.vn | Trong v1.0 từ 2026-10-29 (quyết định của chủ dự án): crawler của dataset th1nhng0, dữ liệu Hugging Face làm nền, mặc định mỗi tháng một lần | [crawl.md](crawl.md) |
 
 ## Mục tiêu, phạm vi và nguyên tắc
 
@@ -22,7 +22,7 @@ Mục tiêu v1.0: người làm xuất nhập khẩu hỏi bằng tiếng Việt
 
 | | Trong phạm vi v1.0 | Ngoài phạm vi v1.0 |
 | --- | --- | --- |
-| Dữ liệu | Văn bản hải quan, XNK, thuế và lĩnh vực liên quan còn hiệu lực; VBHN; Danh mục HS (TT 31/2022) | Công văn hướng dẫn, bản án, cập nhật tự động bằng crawl |
+| Dữ liệu | Văn bản hải quan, XNK, thuế và lĩnh vực liên quan còn hiệu lực; VBHN; Danh mục HS (TT 31/2022); cập nhật hằng tuần từ vbpl.vn | Công văn hướng dẫn, bản án |
 | Chức năng | Hỏi đáp có trích dẫn, tra HS, tra trạng thái và chuỗi sửa đổi, trả lời theo mốc ngày | Tính số thuế phải nộp, tư vấn pháp lý có trách nhiệm |
 | Giao diện | Chat, trình xem văn bản, tra HS, Retrieval Testing, cài đặt, quản trị dữ liệu và feedback | Ứng dụng mobile native |
 | Tích hợp | REST API, MCP server, endpoint tương thích OpenAI | SSO doanh nghiệp |

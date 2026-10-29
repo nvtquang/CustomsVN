@@ -60,17 +60,21 @@ func runBootstrap(args []string) error {
 			}
 		}
 	}
-	steps := []struct{ name, done string }{
-		{"parse", filepath.Join(data, "docs")},
-		{"cite", filepath.Join(data, "cite")},
-		{"subjects", filepath.Join(data, "subject", "assignments.jsonl")},
+	// parse reads uts_vlc unless told otherwise; the corpus is th1nhng0.
+	steps := []struct {
+		name, done string
+		args       []string
+	}{
+		{"parse", filepath.Join(data, "docs"), []string{"--dataset", "th1nhng0"}},
+		{"cite", filepath.Join(data, "cite"), nil},
+		{"subjects", filepath.Join(data, "subject", "assignments.jsonl"), nil},
 	}
 	for _, s := range steps {
 		if nonEmpty(s.done) {
 			continue
 		}
 		say("luatdo %s", s.name)
-		if err := runTool(ctx, *luatdo, s.name, "--data", data); err != nil {
+		if err := runTool(ctx, *luatdo, append([]string{s.name, "--data", data}, s.args...)...); err != nil {
 			return err
 		}
 	}

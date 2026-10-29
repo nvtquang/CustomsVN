@@ -201,7 +201,7 @@ func (r *run) chunks() error {
 	if err != nil {
 		return err
 	}
-	return r.summary(StepChunks, map[string]any{"as_of": r.AsOf, "counts": stats, "chunking": ch.Chunking,
+	return r.summary(StepChunks, map[string]any{"as_of": r.AsOf, "revision": r.Revision, "counts": stats, "chunking": ch.Chunking,
 		"chunks_sha256": chunksHash, "documents_sha256": manifestHash})
 }
 

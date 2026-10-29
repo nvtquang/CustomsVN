@@ -99,34 +99,31 @@ func runServe(args []string) error {
 	srv.Tools = &tools.Toolset{Pool: pool, Engine: e}
 	srv.Version = version
 	srv.Answerer = &answer.Answerer{Engine: e, Router: srv.Router, Now: e.Now, Retrieval: srv.RetrievalSettings,
-		Tools: srv.Tools, ToolLoop: true}
+		Prompts: srv.Prompts, Tools: srv.Tools, ToolLoop: true}
 	if _, err := srv.ReloadLLM(ctx); err != nil {
 		return err
 	}
 	srv.Auth = &auth.Store{Pool: pool}
-	created, password, err := srv.Auth.EnsureAdmin(ctx, os.Getenv(AdminEmailEnv), os.Getenv(AdminPasswordEnv))
-	if err != nil {
+	created, err := srv.Auth.EnsureAdmin(ctx, os.Getenv(AdminEmailEnv), os.Getenv(AdminPasswordEnv))
+	switch {
+	case errors.Is(err, auth.ErrNoAdminPassword):
+		log.Warn("no user yet: set " + AdminPasswordEnv + " and restart, or run customsvn user add -email admin -role admin -password P")
+	case err != nil:
 		return err
-	}
-	if created {
-		if os.Getenv(AdminPasswordEnv) == "" {
-			// Written to stderr once, never stored in clear; change it in the
-			// UI or reset it with customsvn user passwd.
-			fmt.Fprintf(os.Stderr, "\nFirst admin created. Log in with:\n  email:    %s\n  password: %s\nChange the password after logging in.\n\n",
-				orDefault(os.Getenv(AdminEmailEnv), "admin"), password)
-		} else {
-			log.Info("first admin created", "email", orDefault(os.Getenv(AdminEmailEnv), "admin"))
-		}
+	case created:
+		log.Info("first admin created", "email", orDefault(os.Getenv(AdminEmailEnv), "admin"))
 	}
 	go pruneSessions(ctx, srv.Auth, log)
 	if err := evalx.MarkInterrupted(ctx, pool); err != nil {
 		return err
 	}
 	srv.PrepDir = cfg.Prep
+	srv.CrawlerDir = crawlerDir()
 	srv.Jobs = &jobs.Runner{Pool: pool, Log: log, Kinds: jobKinds(cfg, pool, e), After: afterJob(pool, e, srv.Tools)}
 	if err := srv.Jobs.Start(ctx); err != nil {
 		return err
 	}
+	go scheduleCrawls(ctx, pool, srv.Jobs, log)
 	srv.Answers = &evalx.AnswerRunner{Pool: pool, Answerer: srv.Answerer, LLM: srv.LLM, Cost: srv.Cost,
 		Record: func(ctx context.Context, res *answer.Result) error { return srv.Chat.RecordUsage(ctx, 0, "eval:", res) }}
 	if !srv.Router().Has(llm.RoleAnswer) {
@@ -150,7 +147,7 @@ func runServe(args []string) error {
 }
 
 // AdminEmailEnv and AdminPasswordEnv set the first admin, created when the
-// database has no user. Without a password one is generated and printed once.
+// database has no user. Without a password no admin is created.
 const (
 	AdminEmailEnv    = "CUSTOMSVN_ADMIN_EMAIL"
 	AdminPasswordEnv = "CUSTOMSVN_ADMIN_PASSWORD"

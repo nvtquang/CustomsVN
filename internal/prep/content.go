@@ -326,7 +326,9 @@ type legacyContent struct {
 // the same dataset holds for it. A VBHN number repeats across years and
 // ministries, so a row matches only on number and signing date together.
 func (r *run) fillFromLegacy(st map[string]int) error {
-	dir := filepath.Join(r.store.Raw(), "th1nhng0", r.Revision, "legacy")
+	// The legacy configs come with the Hugging Face snapshot only; a crawl
+	// revision has none.
+	dir := filepath.Join(r.store.Raw(), "th1nhng0", Revision, "legacy")
 	if _, err := os.Stat(filepath.Join(dir, "content.parquet")); os.IsNotExist(err) {
 		r.logf("vbhn: no legacy_content under %s; empty consolidated texts stay empty", dir)
 		st["legacy_missing"] = 1

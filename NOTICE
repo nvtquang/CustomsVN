@@ -30,6 +30,12 @@ refreshed 2026-07-23). Changes made by CustomsVN: documents are parsed into
 articles, clauses and points, filtered by force status and subject, tiered by
 relevance to customs, chunked and indexed for retrieval.
 
+Weekly updates: CustomsVN runs the crawler published with this dataset
+(crawler/ at the same revision) against vbpl.vn, and merges the documents
+in its scope with the dataset's own upsert script into a new local revision
+(see docs/crawl.md). The crawler is downloaded at build time, not
+redistributed here.
+
 The same dataset's legacy_metadata and legacy_content configs ("an older,
 larger crawl snapshot", same revision and licence) fill consolidated texts
 (VBHN) whose page at vbpl.vn is empty. `customsvn prep` uses them by default;

@@ -261,6 +261,17 @@ export const authApi = {
     request<{ ok: boolean }>("POST", "/api/auth/password", { current, new: next }),
 };
 
+/** The weekly crawl's schedule; installed says whether this server has the crawler. */
+export interface CrawlSchedule {
+  enabled: boolean;
+  every: "weekly" | "monthly";
+  weekday: number;
+  day: number;
+  hour: number;
+  max_pages: number;
+  installed?: boolean;
+}
+
 export const adminApi = {
   corpus: () => request<CorpusAdmin>("GET", "/api/admin/corpus"),
   jobs: () => request<Job[]>("GET", "/api/admin/jobs"),
@@ -268,6 +279,8 @@ export const adminApi = {
   startJob: (kind: string, params: Record<string, unknown>) =>
     request<{ id: number }>("POST", "/api/admin/jobs", { kind, params }),
   cancelJob: (id: number) => request<{ ok: boolean }>("POST", "/api/admin/jobs/" + id + "/cancel"),
+  crawl: () => request<CrawlSchedule>("GET", "/api/settings/crawl"),
+  saveCrawl: (s: CrawlSchedule) => request<CrawlSchedule>("PUT", "/api/settings/crawl", s),
   feedback: (status: string, rating: number) =>
     request<{ items: FeedbackRow[]; counts: Record<string, number>; labels: string[] }>(
       "GET",

@@ -66,6 +66,8 @@ func run(args []string) error {
 		return runMCP(args[1:])
 	case "user":
 		return runUser(args[1:])
+	case "crawl":
+		return runCrawl(args[1:])
 	}
 	return usage()
 }
@@ -83,7 +85,8 @@ func usage() error {
   eval -goldset FILE run a gold set against the retriever and print metrics
   bootstrap          first data load: luatdo, prep, migrate, ingest
   mcp                serve MCP over stdin/stdout (the server also serves it at /mcp)
-  user list|add|passwd  manage accounts of the Web UI`)
+  user list|add|passwd  manage accounts of the Web UI
+  crawl              fetch what is new on vbpl.vn into a new dataset revision (the server runs it weekly)`)
 }
 
 // parse parses flags and treats -h as success.

@@ -7,6 +7,7 @@
 package prep
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -34,9 +35,36 @@ const (
 // Steps lists every step in run order.
 var Steps = []string{StepTier, StepVBHN, StepRescue, StepHS, StepTables, StepChunks, StepReport}
 
-// Revision is the th1nhng0 revision the baseline was measured on. It is the
-// one named in NOTICE; moving it means remeasuring the baseline.
+// Revision is the th1nhng0 revision the baseline was measured on, the
+// Hugging Face snapshot named in NOTICE. The weekly crawl builds on it: each
+// crawl writes a new revision directory beside it (see internal/crawl), and
+// the legacy configs are only ever read from this one.
 const Revision = "8977887f17be2defae4c5171d55562e1cde7d695"
+
+// LatestRevision is the th1nhng0 revision under <data>/raw fetched last, by
+// its manifest, which is how luatdo picks the one it parses: prep must read
+// the same rows luatdo parsed. With no manifest it is Revision.
+func LatestRevision(data string) string {
+	base := filepath.Join(data, "raw", "th1nhng0")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return Revision
+	}
+	best, bestTime := Revision, time.Time{}
+	for _, e := range entries {
+		var m struct {
+			FetchedAt time.Time `json:"fetched_at"`
+		}
+		raw, err := os.ReadFile(filepath.Join(base, e.Name(), "manifest.json"))
+		if !e.IsDir() || err != nil || json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		if m.FetchedAt.After(bestTime) {
+			best, bestTime = e.Name(), m.FetchedAt
+		}
+	}
+	return best
+}
 
 // Options configures a run.
 type Options struct {
@@ -47,7 +75,8 @@ type Options struct {
 	// AsOf is the day force is judged on, YYYY-MM-DD. Empty means today. It is
 	// an input like any other: two runs agree only if they agree on it.
 	AsOf string
-	// Revision of the th1nhng0 dataset under <Data>/raw. Empty means Revision.
+	// Revision of the th1nhng0 dataset under <Data>/raw. Empty means the
+	// latest (LatestRevision).
 	Revision string
 	// Legacy fills consolidated texts that are empty at the source from the
 	// dataset's legacy_content config (see NOTICE). The CLI turns it on; a
@@ -97,7 +126,7 @@ func Run(opts Options, steps ...string) error {
 		return fmt.Errorf("as-of date %q is not YYYY-MM-DD", opts.AsOf)
 	}
 	if opts.Revision == "" {
-		opts.Revision = Revision
+		opts.Revision = LatestRevision(opts.Data)
 	}
 	if opts.Log == nil {
 		opts.Log = io.Discard

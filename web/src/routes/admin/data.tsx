@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Ban, Play } from "lucide-react";
+import { Ban, CalendarClock, Play, Save } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox, Field, Input, Select } from "@/components/ui/form";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { AdminOnly, ErrorLine, PageTitle, Skeleton } from "@/features/admin/admin-only";
-import { adminApi, type CorpusAdmin, type CountRow, type Job } from "@/lib/api/admin";
+import { adminApi, type CorpusAdmin, type CountRow, type CrawlSchedule, type Job } from "@/lib/api/admin";
 import { cn, when } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/data")({
@@ -28,6 +28,7 @@ function DataPage() {
       <PageTitle title={t("data.title")} subtitle={t("data.subtitle")} />
       <ErrorLine error={corpus.error} />
       {corpus.isPending ? <Skeleton rows={6} /> : corpus.data && <Overview c={corpus.data} />}
+      <Crawl />
       <Jobs models={corpus.data?.embeddings.map((e) => e.model) ?? []} />
       {corpus.data && <Coverage c={corpus.data} />}
       {corpus.data && <Versions c={corpus.data} />}
@@ -145,6 +146,122 @@ function Breakdown({ title, rows, label }: { title: string; rows: CountRow[]; la
 
 const active = (j: Job) => j.status === "queued" || j.status === "running";
 
+/** The weekly update from vbpl.vn: when it runs, and a button to run it now. */
+function Crawl() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["admin", "crawl"], queryFn: adminApi.crawl });
+  const [draft, setDraft] = useState<CrawlSchedule | null>(null);
+  const s = draft ?? q.data;
+  const save = useMutation({
+    mutationFn: (v: CrawlSchedule) => adminApi.saveCrawl(v),
+    onSuccess: (v) => {
+      qc.setQueryData(["admin", "crawl"], v);
+      setDraft(null);
+    },
+  });
+  const run = useMutation({
+    mutationFn: () => adminApi.startJob("crawl", { max_pages: s?.max_pages }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "jobs"] }),
+  });
+  const set = (p: Partial<CrawlSchedule>) => s && setDraft({ ...s, ...p });
+  const days = [1, 2, 3, 4, 5, 6, 0];
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarClock className="size-4 text-muted-foreground" /> {t("crawl.title")}
+          </CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t("crawl.text")}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ErrorLine error={q.error} />
+        {s && !s.installed && (
+          <p className="rounded-md border border-force-partly/40 p-2.5 text-xs text-force-partly">
+            {t("crawl.missing")}
+          </p>
+        )}
+        {s && (
+          <form
+            className="flex flex-wrap items-end gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save.mutate(s);
+            }}
+          >
+            <Checkbox
+              label={t("crawl.enabled")}
+              checked={s.enabled}
+              onChange={(e) => set({ enabled: e.target.checked })}
+              className="h-10"
+            />
+            <Field label={t("crawl.every")}>
+              <Select
+                value={s.every}
+                onChange={(e) => set({ every: e.target.value as CrawlSchedule["every"] })}
+                className="w-36"
+              >
+                <option value="monthly">{t("crawl.monthly")}</option>
+                <option value="weekly">{t("crawl.weekly")}</option>
+              </Select>
+            </Field>
+            {s.every === "weekly" ? (
+              <Field label={t("crawl.weekday")}>
+                <Select value={s.weekday} onChange={(e) => set({ weekday: Number(e.target.value) })} className="w-36">
+                  {days.map((d) => (
+                    <option key={d} value={d}>
+                      {t("crawl.days." + d)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : (
+              <Field label={t("crawl.day")}>
+                <Select value={s.day} onChange={(e) => set({ day: Number(e.target.value) })} className="w-28">
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            <Field label={t("crawl.hour")}>
+              <Select value={s.hour} onChange={(e) => set({ hour: Number(e.target.value) })} className="w-28">
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {String(h).padStart(2, "0")}:00
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("crawl.maxPages")}>
+              <Input
+                type="number"
+                min={1}
+                max={200}
+                value={s.max_pages}
+                onChange={(e) => set({ max_pages: Number(e.target.value) })}
+                className="w-28"
+              />
+            </Field>
+            <Button type="submit" variant="outline" disabled={!draft || save.isPending}>
+              <Save /> {t("crawl.save")}
+            </Button>
+            <Button type="button" disabled={!s.installed || run.isPending} onClick={() => run.mutate()}>
+              <Play /> {t("crawl.runNow")}
+            </Button>
+          </form>
+        )}
+        <p className="text-2xs text-muted-foreground">{t("crawl.help." + (s?.every ?? "monthly"))}</p>
+        <ErrorLine error={save.error ?? run.error} />
+      </CardContent>
+    </Card>
+  );
+}
+
 function Jobs({ models }: { models: string[] }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -258,6 +375,7 @@ function StartJob({ models, onStarted }: { models: string[]; onStarted: (id: num
           <option value="embed" disabled={models.length === 0}>
             {t("jobs.kinds.embed")}
           </option>
+          <option value="crawl">{t("jobs.kinds.crawl")}</option>
         </Select>
       </Field>
       {kind === "prep" && (
