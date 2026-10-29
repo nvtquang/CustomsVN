@@ -6,7 +6,7 @@ Phase 4 of [PLAN.md](PLAN.md): accounts, limits and costs, background data jobs,
 
 Every screen and every `/api` call needs a login. The session is a random token in an `HttpOnly`, `SameSite=Lax` cookie, kept for 30 days of use; the database stores only its SHA-256. Passwords are hashed with PBKDF2-SHA256 (600,000 rounds, from the Go standard library).
 
-- **First admin.** When the database has no user, `serve` creates one: email `CUSTOMSVN_ADMIN_EMAIL` (default `admin`), password `CUSTOMSVN_ADMIN_PASSWORD`, or a generated one printed once to stderr. Conversations made before accounts existed go to this admin.
+- **First admin.** When the database has no user, `serve` creates one: email `CUSTOMSVN_ADMIN_EMAIL` (default `admin`), password `CUSTOMSVN_ADMIN_PASSWORD`. No password is ever generated: without one no admin is created and the log says how to add one (`customsvn user add -email admin -role admin -password P`). Conversations made before accounts existed go to this admin.
 - **Roles.** An admin manages data, settings, users and reviews. A user asks, reads documents, looks up HS codes and sees only their own conversations; someone else's conversation answers 404, not 403.
 - **Users screen** (`/admin/users`): create (with a generated password shown once), change role, disable, reset the password, delete. Disabling or resetting ends the user's sessions. The last active admin cannot be disabled, demoted or deleted.
 - **Locked out:** `customsvn user passwd -email admin` sets a new password from the shell. `customsvn user list` and `customsvn user add` are there too.
@@ -87,10 +87,19 @@ Each question's answer is stored, so a run can be opened question by question (p
 | Provider | Chat | Embedding | Rerank |
 | --- | --- | --- | --- |
 | Anthropic | yes | | |
-| OpenAI, Gemini, DeepSeek, OpenRouter, any OpenAI-compatible API | yes | OpenAI, Gemini, compatible | only at a base URL of its own serving `/rerank` (TEI, Xinference) |
+| OpenAI, Gemini, DeepSeek, any OpenAI-compatible API | yes | OpenAI, Gemini, compatible | only at a base URL of its own serving `/rerank` (TEI, Xinference) |
+| OpenRouter | yes | yes | yes |
 | Voyage, Jina | | yes | yes |
 | Cohere | | | yes |
 | Ollama | yes | yes | |
+
+## System prompts
+
+**System prompt** (`/settings/prompts`, admins) holds the instructions of each model call of an answer: writing the answer, the research agent, the question classifier and the rewriting of follow-ups. Each is filled with the default and can be edited and saved; the next question uses it. A prompt saved equal to its default is stored empty, so a better default in a later release reaches installs that never changed it. The output format and the rules that keep sources and questions from acting as instructions are appended by code and shown read-only under each prompt: an edit changes how answers read, not whether they parse, and every quote is still verified verbatim. The prompts are part of the configuration export.
+
+## Scheduled update
+
+The Data screen schedules the crawl of vbpl.vn (monthly or weekly, day, hour, catalogue pages; the 1st of the month at 02:00 by default) and runs it at once on demand. See [crawl.md](crawl.md).
 
 An embedding model or reranker of the settings screen is named `provider/model`; its vectors are stored under that name. They are added to those of `customsvn.yaml`, which show on the screen as read-only. Saving rebuilds the router, the embedders and the rerankers at once, without a restart. The chat model for each task (answer, question classifier, follow-ups), with a fallback, is picked on the same screen; the embedding model and the reranker on the knowledge screen.
 
