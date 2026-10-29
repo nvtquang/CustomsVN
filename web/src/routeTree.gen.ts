@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as SettingsRetrievalRouteImport } from './routes/settings/retrieval'
+import { Route as SettingsPromptsRouteImport } from './routes/settings/prompts'
 import { Route as SettingsModelsRouteImport } from './routes/settings/models'
 import { Route as SettingsLlmRouteImport } from './routes/settings/llm'
 import { Route as SettingsKnowledgeRouteImport } from './routes/settings/knowledge'
@@ -59,6 +60,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const SettingsRetrievalRoute = SettingsRetrievalRouteImport.update({
   id: '/settings/retrieval',
   path: '/settings/retrieval',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsPromptsRoute = SettingsPromptsRouteImport.update({
+  id: '/settings/prompts',
+  path: '/settings/prompts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/settings/knowledge': typeof SettingsKnowledgeRoute
   '/settings/llm': typeof SettingsLlmRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/prompts': typeof SettingsPromptsRoute
   '/settings/retrieval': typeof SettingsRetrievalRoute
   '/admin': typeof AdminIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/settings/knowledge': typeof SettingsKnowledgeRoute
   '/settings/llm': typeof SettingsLlmRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/prompts': typeof SettingsPromptsRoute
   '/settings/retrieval': typeof SettingsRetrievalRoute
   '/admin': typeof AdminIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/settings/knowledge': typeof SettingsKnowledgeRoute
   '/settings/llm': typeof SettingsLlmRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/prompts': typeof SettingsPromptsRoute
   '/settings/retrieval': typeof SettingsRetrievalRoute
   '/admin/': typeof AdminIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -228,6 +237,7 @@ export interface FileRouteTypes {
     | '/settings/knowledge'
     | '/settings/llm'
     | '/settings/models'
+    | '/settings/prompts'
     | '/settings/retrieval'
     | '/admin'
     | '/settings'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/settings/knowledge'
     | '/settings/llm'
     | '/settings/models'
+    | '/settings/prompts'
     | '/settings/retrieval'
     | '/admin'
     | '/settings'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/settings/knowledge'
     | '/settings/llm'
     | '/settings/models'
+    | '/settings/prompts'
     | '/settings/retrieval'
     | '/admin/'
     | '/settings/'
@@ -298,6 +310,7 @@ export interface RootRouteChildren {
   SettingsKnowledgeRoute: typeof SettingsKnowledgeRoute
   SettingsLlmRoute: typeof SettingsLlmRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
+  SettingsPromptsRoute: typeof SettingsPromptsRoute
   SettingsRetrievalRoute: typeof SettingsRetrievalRoute
   AdminIndexRoute: typeof AdminIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -345,6 +358,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/retrieval'
       fullPath: '/settings/retrieval'
       preLoaderRoute: typeof SettingsRetrievalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/prompts': {
+      id: '/settings/prompts'
+      path: '/settings/prompts'
+      fullPath: '/settings/prompts'
+      preLoaderRoute: typeof SettingsPromptsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/models': {
@@ -474,6 +494,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsKnowledgeRoute: SettingsKnowledgeRoute,
   SettingsLlmRoute: SettingsLlmRoute,
   SettingsModelsRoute: SettingsModelsRoute,
+  SettingsPromptsRoute: SettingsPromptsRoute,
   SettingsRetrievalRoute: SettingsRetrievalRoute,
   AdminIndexRoute: AdminIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,

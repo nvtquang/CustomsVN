@@ -11,6 +11,7 @@ import (
 
 	"github.com/nvtquang/CustomsVN/internal/answer"
 	"github.com/nvtquang/CustomsVN/internal/chat"
+	"github.com/nvtquang/CustomsVN/internal/httpapi"
 	"github.com/nvtquang/CustomsVN/internal/llm"
 	"github.com/nvtquang/CustomsVN/internal/llmconfig"
 	"github.com/nvtquang/CustomsVN/internal/mcpserver"
@@ -57,7 +58,8 @@ func runMCP(args []string) error {
 	for _, p := range problems {
 		log.Warn("llm provider", "err", p)
 	}
-	a := &answer.Answerer{Engine: e, Router: func() *llm.Router { return router }, Now: e.Now, Tools: ts, ToolLoop: true}
+	a := &answer.Answerer{Engine: e, Router: func() *llm.Router { return router }, Now: e.Now, Tools: ts, ToolLoop: true,
+		Prompts: func(ctx context.Context) answer.Prompts { return httpapi.StoredPrompts(ctx, pool) }}
 	llms := &llmconfig.Store{Pool: pool, Box: box}
 	st, err := llms.Load(ctx)
 	if err != nil {

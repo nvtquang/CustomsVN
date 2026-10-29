@@ -7,6 +7,7 @@ import {
   Library,
   LogOut,
   MessageSquareWarning,
+  ScrollText,
   Plug,
   SlidersHorizontal,
   UserRound,
@@ -57,6 +58,7 @@ export function SettingsFrame({
         items: [
           { to: "/settings/models", label: t("set.models"), icon: <Boxes /> },
           { to: "/settings/knowledge", label: t("set.knowledge"), icon: <Library /> },
+          { to: "/settings/prompts", label: t("set.prompts"), icon: <ScrollText /> },
         ],
       },
       {
@@ -99,7 +101,7 @@ export function SettingsFrame({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-surface lg:flex">
+      <aside className="hidden w-64 shrink-0 flex-col border-r bg-surface lg:flex">
         <div className="flex h-14 items-center px-5 text-base font-semibold">{t("set.title")}</div>
         <nav aria-label={t("set.nav")} className="flex-1 space-y-5 overflow-y-auto px-3 pb-3">
           {sections.map((s) => (

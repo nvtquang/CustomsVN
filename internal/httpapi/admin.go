@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/nvtquang/CustomsVN/internal/answer"
 	"github.com/nvtquang/CustomsVN/internal/chat"
 	"github.com/nvtquang/CustomsVN/internal/evalx"
 	"github.com/nvtquang/CustomsVN/internal/jobs"
@@ -592,7 +593,8 @@ type ConfigFile struct {
 		Roles     map[string][]llmconfig.Target `json:"roles"`
 		Prices    llmconfig.Prices              `json:"prices"`
 	} `json:"llm,omitempty"`
-	Limits *Limits `json:"limits,omitempty"`
+	Limits  *Limits         `json:"limits,omitempty"`
+	Prompts *answer.Prompts `json:"prompts,omitempty"`
 }
 
 func (s *Server) exportConfig(w http.ResponseWriter, r *http.Request) {
@@ -604,7 +606,8 @@ func (s *Server) exportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	ret := s.settings(ctx)
 	lim := s.limits(ctx)
-	out := ConfigFile{Format: ConfigFormat, Version: 1, ExportedAt: time.Now().UTC(), Retrieval: &ret, Limits: &lim}
+	prompts := s.Prompts(ctx)
+	out := ConfigFile{Format: ConfigFormat, Version: 1, ExportedAt: time.Now().UTC(), Retrieval: &ret, Limits: &lim, Prompts: &prompts}
 	out.LLM = &struct {
 		Providers []exportedProvider            `json:"providers"`
 		Roles     map[string][]llmconfig.Target `json:"roles"`
@@ -682,6 +685,13 @@ func (s *Server) importConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		applied = append(applied, "limits")
+	}
+	if in.Prompts != nil {
+		if err := s.savePrompts(ctx, *in.Prompts); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		applied = append(applied, "prompts")
 	}
 	if needKeys == nil {
 		needKeys = []string{}
