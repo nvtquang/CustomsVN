@@ -115,7 +115,7 @@ var dummyHash = sync.OnceValue(func() string {
 	return h
 })
 
-// RandomPassword returns a password for a new admin or a reset.
+// RandomPassword returns a password for a user an admin creates without one.
 func RandomPassword() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
@@ -148,31 +148,35 @@ func validPassword(p string) error {
 	return nil
 }
 
+// ErrNoAdminPassword is a database with no user and no password to give the
+// first admin.
+var ErrNoAdminPassword = errors.New("no user yet and no admin password given")
+
 // EnsureAdmin creates the first admin when there is no user at all, and hands
-// it the conversations made before accounts existed. password may be empty:
-// one is generated and returned, to be shown once.
-func (s *Store) EnsureAdmin(ctx context.Context, email, password string) (created bool, pw string, err error) {
+// it the conversations made before accounts existed. The password is the
+// operator's, never generated: a generated one ends up in a log.
+func (s *Store) EnsureAdmin(ctx context.Context, email, password string) (created bool, err error) {
 	var n int
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
-		return false, "", err
+		return false, err
 	}
 	if n > 0 {
-		return false, "", nil
+		return false, nil
+	}
+	if password == "" {
+		return false, ErrNoAdminPassword
 	}
 	if email = NormEmail(email); email == "" {
 		email = "admin"
 	}
-	if password == "" {
-		password = RandomPassword()
-	}
 	u, err := s.Create(ctx, email, "Admin", RoleAdmin, password)
 	if err != nil {
-		return false, "", err
+		return false, err
 	}
 	if _, err := s.Pool.Exec(ctx, `UPDATE conversations SET user_id = $1 WHERE user_id IS NULL`, u.ID); err != nil {
-		return false, "", err
+		return false, err
 	}
-	return true, password, nil
+	return true, nil
 }
 
 const userCols = `id, email, name, role, disabled, created_at, last_login`

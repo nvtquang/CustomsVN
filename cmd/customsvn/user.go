@@ -21,7 +21,7 @@ func runUser(args []string) error {
 	email := fs.String("email", "", "the account's email ('admin' for the default admin)")
 	role := fs.String("role", auth.RoleUser, "admin or user")
 	name := fs.String("name", "", "display name")
-	password := fs.String("password", "", "password (default: generated and printed)")
+	password := fs.String("password", "", "password, at least 10 characters (add and passwd)")
 	if ok, err := parse(fs, args[1:]); !ok {
 		return err
 	}
@@ -34,8 +34,8 @@ func runUser(args []string) error {
 	defer pool.Close()
 	store := &auth.Store{Pool: pool}
 	pw := *password
-	if pw == "" {
-		pw = auth.RandomPassword()
+	if pw == "" && args[0] != "list" {
+		return errors.New("-password is required: passwords are chosen, not generated")
 	}
 	switch args[0] {
 	case "list":
