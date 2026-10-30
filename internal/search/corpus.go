@@ -75,7 +75,28 @@ type Corpus struct {
 	numbers map[string][]*Doc            // normalised official number -> docs
 	names   map[string][]*Doc            // folded law name -> docs
 	index   *retrieve.Index
+	// exceptions maps an article to the provisions of its instrument that
+	// say when it does not apply (see Exceptions).
+	exceptions map[string][]string
+	// stale maps a chunk an amendment rewrote to the day it stopped being
+	// the law (see superseded).
+	stale map[string]string
 }
+
+// SetAmendments records which chunks amendments rewrote, so they stop
+// grounding answers from the day the amendment took effect.
+func (c *Corpus) SetAmendments(edges []Amendment) {
+	c.stale = superseded(c, edges)
+}
+
+// Superseded reports whether an amendment in force on asOf rewrote the chunk.
+func (c *Corpus) Superseded(chunkID, asOf string) bool {
+	d, ok := c.stale[chunkID]
+	return ok && d <= asOf
+}
+
+// StaleCount is how many chunks amendments rewrote, for the startup log.
+func (c *Corpus) StaleCount() int { return len(c.stale) }
 
 // NewCorpus indexes documents and chunks.
 func NewCorpus(version int64, docs []Doc, chunks []Chunk) *Corpus {
@@ -126,6 +147,7 @@ func NewCorpus(version int64, docs []Doc, chunks []Chunk) *Corpus {
 		in.Docs = append(in.Docs, ldocs[id])
 	}
 	c.index = retrieve.Build(in)
+	c.indexExceptions()
 	return c
 }
 
@@ -158,9 +180,12 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (*Corpus, error) {
 	if version == 0 {
 		return nil, fmt.Errorf("the database holds no corpus: run customsvn ingest")
 	}
-	rows, err := pool.Query(ctx, `SELECT id, official_number, doc_type, title, issuing_body, signed_on, effective_from,
-		expired_on, force_status, status, tier, source_kind, source_url, coalesce(consolidates, ''), coalesce(consolidated_in, '')
-		FROM documents ORDER BY id`)
+	// A reviewed override (force_overrides) wins over the source's label and
+	// expiry date, which lag.
+	rows, err := pool.Query(ctx, `SELECT d.id, d.official_number, d.doc_type, d.title, d.issuing_body, d.signed_on, d.effective_from,
+		coalesce(o.expired_on, d.expired_on), coalesce(o.force_status, d.force_status), d.status, d.tier, d.source_kind, d.source_url,
+		coalesce(d.consolidates, ''), coalesce(d.consolidated_in, '')
+		FROM documents d LEFT JOIN force_overrides o ON o.official_number = d.official_number ORDER BY d.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +220,24 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (*Corpus, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return NewCorpus(version, docs, chunks), nil
+	rows, err = pool.Query(ctx, `SELECT from_doc, coalesce(to_doc, ''), to_number FROM edges WHERE kind = 'amends'`)
+	if err != nil {
+		return nil, err
+	}
+	var edges []Amendment
+	for rows.Next() {
+		var e Amendment
+		if err := rows.Scan(&e.From, &e.ToDoc, &e.ToNumber); err != nil {
+			return nil, err
+		}
+		edges = append(edges, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	c := NewCorpus(version, docs, chunks)
+	c.SetAmendments(edges)
+	return c, nil
 }
 
 func isoOf(t *time.Time) string {

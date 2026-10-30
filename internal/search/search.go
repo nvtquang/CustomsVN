@@ -466,13 +466,19 @@ func (e *Engine) Search(ctx context.Context, req Request) (*Response, error) {
 				h.Replaced, h.ChunkID, ch = ch.ID, v.ID, v
 			}
 		}
+		// Wording an amendment has since rewritten is out like an expired
+		// document: the amendment is the source now.
+		stale := c.Superseded(ch.ID, f.AsOf)
+		if stale && !f.IncludeExpired {
+			continue
+		}
 		if prev := seen[h.ChunkID]; prev != nil {
 			prev.Duplicates = append(prev.Duplicates, firstNonEmpty(h.Replaced, h.ChunkID))
 			continue
 		}
 		h.Chunk, h.Doc = ch, c.Docs[ch.DocID]
 		h.Force = force[ch.DocID]
-		h.Usable = Usable(h.Force)
+		h.Usable = Usable(h.Force) && !stale
 		if !h.Usable {
 			res.ExpiredInTopK++
 		}
@@ -584,5 +590,5 @@ func (e *Engine) HitFor(chunkID, asOf string) *Hit {
 		asOf = today
 	}
 	f := c.Force(d, asOf, today)
-	return &Hit{ChunkID: ch.ID, Chunk: ch, Doc: d, Force: f, Usable: Usable(f)}
+	return &Hit{ChunkID: ch.ID, Chunk: ch, Doc: d, Force: f, Usable: Usable(f) && !c.Superseded(ch.ID, asOf)}
 }

@@ -86,6 +86,12 @@ func (t *Toolset) getProvision(reference, asOf string) (*Result, error) {
 			continue
 		}
 		h := t.Engine.HitFor(r.ChunkID, asOf)
+		if h != nil && !h.Usable && search.Usable(h.Force) {
+			// In force, but an amendment rewrote this provision: point the
+			// model at the amendment instead of letting it give up.
+			notes = append(notes, p.Span+": đã được văn bản sửa đổi viết lại, hãy tìm nội dung mới trong văn bản sửa đổi (get_amendments)")
+			continue
+		}
 		if h == nil || !h.Usable {
 			notes = append(notes, p.Span+": văn bản không còn hiệu lực tại "+asOf)
 			continue
@@ -136,14 +142,21 @@ type Link struct {
 var errNotFound = errors.New("không tìm thấy văn bản")
 
 // columns lists a registry row's fields for scanDoc, from the table
-// aliased as a ("" for none).
+// aliased as a ("" for none). A reviewed override (force_overrides) wins
+// over the source's force and expiry date, as it does in the corpus.
 func columns(a string) string {
+	t := "registry"
 	if a != "" {
+		t = a
 		a += "."
 	}
+	override := func(col string) string {
+		return "(SELECT o." + col + " FROM force_overrides o WHERE o.official_number = " + t + ".official_number)"
+	}
 	return a + "id, " + a + "official_number, " + a + "title, " + a + "doc_type, " + a + "issuing_body, " +
-		"coalesce(" + a + "signed_on::text, ''), coalesce(" + a + "effective_from::text, ''), coalesce(" + a + "expired_on::text, ''), " +
-		a + "force_status, " + a + "source_url"
+		"coalesce(" + a + "signed_on::text, ''), coalesce(" + a + "effective_from::text, ''), " +
+		"coalesce(" + override("expired_on") + "::text, " + a + "expired_on::text, ''), " +
+		"coalesce(" + override("force_status") + ", " + a + "force_status), " + a + "source_url"
 }
 
 func scanDoc(row pgx.Row) (Doc, error) {
@@ -335,4 +348,42 @@ func (t *Toolset) graphQuery(ctx context.Context, query, ref string) (*Result, e
 	}
 	out := Graph{Query: query, Doc: d, Rows: rows}
 	return &Result{Text: jsonText(out), Summary: fmt.Sprintf("%s %s: %d", query, d.Number, len(rows)), Card: &Card{Type: "graph", Data: out}}, nil
+}
+
+// MissingAmendment is an amendment of a document whose own text is not in
+// the corpus, so the amended wording cannot be quoted.
+type MissingAmendment struct {
+	Amended       string // official number of the amended document
+	By            string // official number of the amending one
+	EffectiveFrom string
+}
+
+// MissingAmendments lists, for the given corpus documents, the amendments in
+// force on asOf that the corpus has no text for.
+func (t *Toolset) MissingAmendments(ctx context.Context, docIDs []string, asOf string) ([]MissingAmendment, error) {
+	if len(docIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := t.Pool.Query(ctx, `SELECT DISTINCT d.official_number, r.official_number, r.effective_from::text
+		FROM edges e
+		JOIN documents d ON d.id = e.to_doc
+		JOIN registry r ON r.id = e.from_doc
+		WHERE e.to_doc = ANY($1) AND e.kind = 'amends' AND e.relation = 'amends'
+		  AND r.effective_from IS NOT NULL AND r.effective_from <= $2::date
+		  AND r.force_status = 'Còn hiệu lực'
+		  AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.id = r.id)
+		ORDER BY 1, 3`, docIDs, asOf)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MissingAmendment
+	for rows.Next() {
+		var m MissingAmendment
+		if err := rows.Scan(&m.Amended, &m.By, &m.EffectiveFrom); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
