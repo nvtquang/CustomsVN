@@ -19,6 +19,7 @@ import (
 // Roles a model is chosen for.
 const (
 	RoleAnswer  = "answer"  // composes the answer
+	RoleAgent   = "agent"   // calls tools to gather sources; the answer model when unset
 	RoleRewrite = "rewrite" // turns a follow-up into a standalone question
 	RoleRouter  = "router"  // classifies the question; a cheap model
 )

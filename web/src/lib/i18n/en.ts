@@ -286,6 +286,7 @@ const en: Messages = {
     roleHint: "The first model is used first; if it fails before answering, the next one takes over.",
     role: {
       answer: "Answer",
+      agent: "Gather sources with tools (the answer model if unset)",
       rewrite: "Rewrite the question",
       router: "Classify the question (a cheap model)",
     },

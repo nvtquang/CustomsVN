@@ -160,7 +160,7 @@ const PRESETS: Preset[] = [
 ];
 
 const CUSTOM = "__custom";
-const ROLES = ["answer", "router", "rewrite"] as const;
+const ROLES = ["answer", "agent", "router", "rewrite"] as const;
 const TABS = ["all", "chat", "embedding", "rerank", "vision", "speech"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -222,7 +222,7 @@ function normalize(s: LLMSettings): LLMSettings {
   return {
     ...s,
     providers: s.providers.map((p) => ({ ...p, embeddings: p.embeddings ?? [], rerankers: p.rerankers ?? [] })),
-    roles: { answer: [], rewrite: [], router: [], ...s.roles },
+    roles: { answer: [], agent: [], rewrite: [], router: [], ...s.roles },
     prices: s.prices ?? {},
   };
 }

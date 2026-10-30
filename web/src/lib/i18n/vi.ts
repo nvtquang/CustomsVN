@@ -284,6 +284,7 @@ const vi = {
     roleHint: "Model đứng trước được dùng trước; nếu lỗi trước khi trả lời thì chuyển sang model sau.",
     role: {
       answer: "Trả lời",
+      agent: "Tra cứu bằng công cụ (dùng model trả lời nếu để trống)",
       rewrite: "Viết lại câu hỏi",
       router: "Phân loại câu hỏi (model rẻ)",
     },

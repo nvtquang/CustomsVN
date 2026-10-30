@@ -429,7 +429,14 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	lap("compose", t)
 
 	switch {
+	case len(res.Claims) > 0 && onlyLocal(a.Engine.Corpus(), res):
+		return a.refuse(res, emit, &Refusal{Code: "out_of_scope",
+			Reason:      "Câu hỏi nằm ngoài phạm vi pháp luật hải quan: nguồn duy nhất tìm được là văn bản của chính quyền địa phương, không phải căn cứ về hải quan, xuất nhập khẩu.",
+			Suggestions: []string{"Hỏi về thủ tục, thuế, xuất xứ, trị giá hay xử phạt trong lĩnh vực hải quan."}})
 	case len(res.Claims) > 0:
+		if err := a.amendmentGaps(ctx, res, emit); err != nil {
+			return nil, err
+		}
 		return res, nil
 	case cardsAnswer(res, refusal != nil || len(res.Dropped) > 0):
 		// The cards answer from the data; no claim was needed beside them.
@@ -440,6 +447,71 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	return a.refuse(res, emit, &Refusal{Code: "unverified",
 		Reason:      "Không có nhận định nào được kiểm chứng nguyên văn với văn bản còn hiệu lực, nên CustomsVN không đưa ra câu trả lời.",
 		Suggestions: []string{"Hỏi cụ thể hơn, ví dụ nêu tên thủ tục hoặc văn bản.", "Tra trực tiếp điều khoản, ví dụ: Điều 18 Luật Hải quan quy định gì?"}})
+}
+
+// onlyLocal reports whether every citation comes from a provincial
+// document (a People's Committee or Council). Customs law is national: an
+// answer resting on a province's fee resolution alone means the question was
+// not about customs, as when a question on marriage registration was
+// answered from Huế's fee schedule. Claims are already shown when this is
+// decided; the refusal replaces them.
+func onlyLocal(c *search.Corpus, res *Result) bool {
+	n := 0
+	for _, cl := range res.Claims {
+		for _, ct := range cl.Citations {
+			d := c.Docs[ct.DocID]
+			if d == nil || !isLocal(d) {
+				return false
+			}
+			n++
+		}
+	}
+	return n > 0
+}
+
+func isLocal(d *search.Doc) bool {
+	b := strings.ToLower(d.IssuingBody + " " + d.ID)
+	return strings.Contains(b, "ubnd") || strings.Contains(b, "hđnd") || strings.Contains(b, "hdnd") ||
+		strings.Contains(b, "ủy ban nhân dân") || strings.Contains(b, "hội đồng nhân dân")
+}
+
+// amendmentGaps warns, as gap lines, that a cited document was amended by
+// one whose text the corpus lacks: vbpl.vn publishes no text for law
+// 90/2025/QH15, which amends the Customs Law, so a quote of the Customs Law
+// can be wording that law changed. The verifier cannot see this; the reader
+// must. A database error only loses the warning.
+func (a *Answerer) amendmentGaps(ctx context.Context, res *Result, emit func(Event) error) error {
+	if a.Tools == nil || a.Tools.Pool == nil {
+		return nil
+	}
+	c := a.Engine.Corpus()
+	var cited []string
+	seen := map[string]bool{}
+	for _, cl := range res.Claims {
+		for _, ct := range cl.Citations {
+			id := ct.DocID
+			if d := c.Docs[id]; d != nil && d.Consolidates != "" {
+				id = d.Consolidates
+			}
+			if id != "" && !seen[id] {
+				seen[id] = true
+				cited = append(cited, id)
+			}
+		}
+	}
+	missing, err := a.Tools.MissingAmendments(ctx, cited, res.AsOf)
+	if err != nil {
+		return nil
+	}
+	for _, m := range missing {
+		g := fmt.Sprintf("%s đã được sửa đổi bởi %s (hiệu lực %s); nội dung sửa đổi chưa có trong kho dữ liệu, nên phần trích dẫn có thể chưa phản ánh quy định mới.",
+			m.Amended, m.By, m.EffectiveFrom)
+		res.Gaps = append(res.Gaps, g)
+		if err := emit(Event{Type: "gap", Text: g}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *Answerer) refuse(res *Result, emit func(Event) error, r *Refusal) (*Result, error) {

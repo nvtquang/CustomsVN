@@ -50,6 +50,10 @@ const MaxSteps = 6
 // maxSources is how many chunks the composer sees at most.
 const maxSources = 12
 
+// maxExceptions is how many exception provisions (see search.Exceptions) may
+// join the sources.
+const maxExceptions = 2
+
 var (
 	asksHS         = regexp.MustCompile(`(?i)mã hs|mã số hàng hóa|mã số hàng hoá|phân loại|áp mã|thuộc (?:nhóm|phân nhóm|chương)|mã hàng`)
 	asksStatus     = regexp.MustCompile(`(?i)(?:còn|hết|có|chưa có) hiệu lực|bị thay thế|bị bãi bỏ|còn áp dụng|còn dùng được`)
@@ -253,7 +257,7 @@ func (a *Answerer) gather(ctx context.Context, router *llm.Router, p Prompts, re
 	// The model's loop, for questions that may need more than one search. A
 	// question about goods or an HS code is answered like a rule: which
 	// licences, inspections and limits apply to those goods.
-	var extra []search.Hit
+	var fetched, extra []search.Hit
 	if a.ToolLoop && (res.Intent.Kind == IntentRegulation || res.Intent.Kind == IntentProcedure || res.Intent.Kind == IntentHS) {
 		t = time.Now()
 		if err := emit(Event{Type: "status", Stage: "agent"}); err != nil {
@@ -261,8 +265,14 @@ func (a *Answerer) gather(ctx context.Context, router *llm.Router, p Prompts, re
 		}
 		msgs := []llm.Message{{Role: "user", Content: questionBlock(res.Standalone) + "\nNGÀY ÁP DỤNG: " + res.AsOf +
 			"\n\nĐÃ CÓ CÁC ĐIỀU KHOẢN SAU (từ tìm kiếm ban đầu):\n" + listHits(append(first, rest...))}}
+		// The loop only gathers sources, so it can run on a faster model
+		// than the one that writes the answer.
+		agentRole := llm.RoleAgent
+		if !router.Has(agentRole) {
+			agentRole = llm.RoleAnswer
+		}
 		for turn := 0; turn < MaxSteps; turn++ {
-			resp, err := router.Stream(ctx, llm.RoleAnswer, llm.Request{System: p.agent(), Messages: msgs, Tools: chatTools(), MaxTokens: 800}, nil)
+			resp, err := router.Stream(ctx, agentRole, llm.Request{System: p.agent(), Messages: msgs, Tools: chatTools(), MaxTokens: 800}, nil)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
@@ -287,6 +297,9 @@ func (a *Answerer) gather(ctx context.Context, router *llm.Router, p Prompts, re
 					return nil, ctx.Err()
 				case err != nil:
 					content = "Lỗi: " + err.Error()
+				case tc.Name == tools.GetProvision:
+					content = r.Text
+					fetched = append(fetched, r.Sources...)
 				default:
 					content = r.Text
 					extra = append(extra, r.Sources...)
@@ -300,21 +313,51 @@ func (a *Answerer) gather(ctx context.Context, router *llm.Router, p Prompts, re
 		res.TimingMS["agent"] = ms(t)
 	}
 
-	// Provisions named in the question, then the search, then what the
-	// model found, each chunk once.
-	var out []search.Hit
-	seen := map[string]bool{}
-	for _, h := range append(append(first, rest...), extra...) {
-		if seen[h.ChunkID] || !h.Usable {
-			continue
-		}
-		seen[h.ChunkID] = true
-		out = append(out, h)
-		if len(out) == maxSources {
-			break
+	out := pickSources(first, fetched, rest, extra)
+	// The provisions that carve exceptions out of what was found go in ahead
+	// of the searches, at most two, so a penalty is never quoted without its
+	// "no penalty when".
+	ids := make([]string, len(out))
+	for i, h := range out {
+		ids[i] = h.ChunkID
+	}
+	var exc []search.Hit
+	for _, id := range a.Engine.Corpus().Exceptions(ids) {
+		if h := a.Engine.HitFor(id, res.AsOf); h != nil && h.Usable {
+			exc = append(exc, *h)
+			if len(exc) == maxExceptions {
+				break
+			}
 		}
 	}
+	if len(exc) > 0 {
+		out = pickSources(first, append(append([]search.Hit(nil), fetched...), exc...), rest, extra)
+	}
 	return out, nil
+}
+
+// pickSources orders what the composer sees, each chunk once and at most
+// maxSources: provisions named in the question, then provisions the model
+// fetched by reference, then the first search, then the model's own
+// searches. A provision the model asked for by name is its most deliberate
+// find; behind the first search it fell past the cap, and the composer
+// refused for want of the very provision the trace shows was fetched.
+func pickSources(named, fetched, search1, searched []search.Hit) []search.Hit {
+	var out []search.Hit
+	seen := map[string]bool{}
+	for _, list := range [][]search.Hit{named, fetched, search1, searched} {
+		for _, h := range list {
+			if seen[h.ChunkID] || !h.Usable {
+				continue
+			}
+			seen[h.ChunkID] = true
+			out = append(out, h)
+			if len(out) == maxSources {
+				return out
+			}
+		}
+	}
+	return out
 }
 
 // listHits is the short list the agent model starts from.

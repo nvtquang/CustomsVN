@@ -203,7 +203,7 @@ func (s *Store) Save(ctx context.Context, in *Settings) error {
 		}
 	}
 	for role, targets := range in.Roles {
-		if role != llm.RoleAnswer && role != llm.RoleRewrite && role != llm.RoleRouter {
+		if role != llm.RoleAnswer && role != llm.RoleAgent && role != llm.RoleRewrite && role != llm.RoleRouter {
 			return fmt.Errorf("unknown role %q", role)
 		}
 		for _, t := range targets {

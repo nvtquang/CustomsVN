@@ -3,11 +3,13 @@ package answer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/nvtquang/CustomsVN/internal/llm"
 	"github.com/nvtquang/CustomsVN/internal/refs"
+	"github.com/nvtquang/CustomsVN/internal/search"
 	"github.com/nvtquang/CustomsVN/internal/tools"
 )
 
@@ -108,6 +110,32 @@ func TestToolLoopAddsSources(t *testing.T) {
 	}
 }
 
+func TestFetchedProvisionSurvivesTheCap(t *testing.T) {
+	hits := func(prefix string, n int) []search.Hit {
+		var out []search.Hit
+		for i := 0; i < n; i++ {
+			out = append(out, search.Hit{ChunkID: fmt.Sprintf("%s-%d", prefix, i), Usable: true})
+		}
+		return out
+	}
+	// A first search that fills the cap on its own must not push out the
+	// provision the model fetched by reference.
+	got := pickSources(hits("named", 1), hits("fetched", 2), hits("search", maxSources), hits("searched", 5))
+	if len(got) != maxSources {
+		t.Fatalf("%d sources", len(got))
+	}
+	want := []string{"named-0", "fetched-0", "fetched-1", "search-0"}
+	for i, id := range want {
+		if got[i].ChunkID != id {
+			t.Errorf("source %d is %s, want %s", i, got[i].ChunkID, id)
+		}
+	}
+	dup := pickSources(hits("x", 1), hits("x", 1), []search.Hit{{ChunkID: "y", Usable: false}}, nil)
+	if len(dup) != 1 {
+		t.Errorf("duplicates or unusable kept: %+v", dup)
+	}
+}
+
 func TestNamedProvisionIsFetchedByThePlan(t *testing.T) {
 	a, fake := answerer(`{"claim": "Có.", "citations": [{"source": 1, "quote": "Yêu cầu cơ quan hải quan xác định trước mã số"}]}`)
 	a.Tools = &tools.Toolset{Engine: a.Engine}
@@ -167,5 +195,21 @@ func TestCardsAnswerOnlyWhenTheyFoundSomething(t *testing.T) {
 		if got := cardsAnswer(res, c.tried); got != c.want {
 			t.Errorf("%s %d cards tried=%v: got %v", c.kind, len(c.cards), c.tried, got)
 		}
+	}
+}
+
+func TestOnlyLocalCitations(t *testing.T) {
+	docs := []search.Doc{
+		{ID: "vn:law:2017:14-2017-nq-hdnd:hdnd-tinh-thua-thien-hue", IssuingBody: "HĐND tỉnh Thừa Thiên Huế"},
+		{ID: "vn:law:2014:54-2014-qh13", IssuingBody: "Quốc hội"},
+	}
+	c := search.NewCorpus(1, docs, nil)
+	local := &Result{Claims: []Claim{{Citations: []Citation{{DocID: docs[0].ID}}}}}
+	if !onlyLocal(c, local) {
+		t.Error("an answer citing only a provincial resolution is not flagged")
+	}
+	mixed := &Result{Claims: []Claim{{Citations: []Citation{{DocID: docs[0].ID}}}, {Citations: []Citation{{DocID: docs[1].ID}}}}}
+	if onlyLocal(c, mixed) {
+		t.Error("an answer citing a national law is flagged")
 	}
 }

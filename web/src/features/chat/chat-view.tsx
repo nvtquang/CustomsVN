@@ -103,7 +103,9 @@ export function ChatView({ id }: { id?: number }) {
           case "dropped":
             return { ...p, dropped: p.dropped + 1 };
           case "refusal":
-            return { ...p, refusal: e.refusal };
+            // A refusal can follow claims already shown (an answer resting
+            // only on provincial documents); it replaces them, as stored.
+            return { ...p, refusal: e.refusal, claims: [] };
           case "error":
             return { ...p, error: { kind: e.kind, message: e.message } };
           case "done":
