@@ -21,7 +21,9 @@ type Amendment struct {
 var (
 	instruction = regexp.MustCompile(`(?i)^\s*(?:\d+[a-z]?\.\s*)?(?:[a-zđ]\)\s*)?(?:sửa đổi, bổ sung|sửa đổi|bãi bỏ|thay thế|bổ sung)\b(.*?)(?:như sau|$)`)
 	target      = regexp.MustCompile(`(?i)((?:(?:khoản|điểm)\s+[\p{L}\d,\s]+?)?)điều\s+(\d+[a-z]?)\b`)
-	clauseNum   = regexp.MustCompile(`(?i)khoản\s+(\d+[a-z]?)`)
+	// "khoản 1, khoản 2" and "các khoản 2, 3 và 7": every number of a run.
+	clauseRun   = regexp.MustCompile(`(?i)khoản\s+(\d+[a-z]?(?:\s*(?:,|và)\s*\d+[a-z]?)*)`)
+	clauseNum   = regexp.MustCompile(`\d+[a-z]?`)
 	officialNum = regexp.MustCompile(`\d+/\d{4}/[\p{L}\-]+`)
 )
 
@@ -107,7 +109,10 @@ func amendedProvisions(c *Corpus, am *Doc, number string) []string {
 			}
 			for _, r := range target.FindAllStringSubmatch(m[1], -1) {
 				art := "article-" + strings.ToLower(r[2])
-				clauses := clauseNum.FindAllStringSubmatch(r[1], -1)
+				var clauses []string
+				for _, run := range clauseRun.FindAllStringSubmatch(r[1], -1) {
+					clauses = append(clauses, clauseNum.FindAllString(run[1], -1)...)
+				}
 				if len(clauses) == 0 {
 					if !seen[art] {
 						seen[art] = true
@@ -116,7 +121,7 @@ func amendedProvisions(c *Corpus, am *Doc, number string) []string {
 					continue
 				}
 				for _, cl := range clauses {
-					k := art + ":clause-" + strings.ToLower(cl[1])
+					k := art + ":clause-" + strings.ToLower(cl)
 					if !seen[k] {
 						seen[k] = true
 						keys = append(keys, k)

@@ -22,13 +22,16 @@ func staleCorpus() *Corpus {
 		{ID: "base:article-22", DocID: "base", Text: "Điều 22. Cả điều, trong đó có khoản 3 bị sửa."},
 		{ID: "base:article-25", DocID: "base", Text: "Điều 25. Không bị sửa."},
 		{ID: "base:article-22:clause-3", DocID: "base", Text: "3. Khoản cũ."},
+		{ID: "base:article-24:clause-3", DocID: "base", Text: "3. Khoản cũ."},
+		{ID: "base:article-24:clause-5", DocID: "base", Text: "5. Khoản không bị sửa."},
+		{ID: "base:article-24:clause-7", DocID: "base", Text: "7. Khoản cũ."},
 		{ID: "base:article-30", DocID: "base", Text: "Điều 30. Chỉ văn bản sửa nhiều nghị định nhắc tới, trong điều của nghị định khác."},
 		{ID: "vbhn:article-21:clause-5", DocID: "vbhn", Text: "5. Tỷ giá cũ."},
 		{ID: "vbhn:article-22", DocID: "vbhn", Text: "Điều 22. Không bị sửa."},
 		{ID: "am:article-1:clause-8", DocID: "am", Path: []string{"Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 08/2015/NĐ-CP"},
 			Text: "8. Sửa đổi, bổ sung khoản 1, khoản 2 Điều 20 như sau:\na) Sửa đổi, bổ sung khoản 1 như sau:\n\"1. Theo khoản 2 Điều 25 Nghị định này.\""},
 		{ID: "am:article-1:clause-9~2", DocID: "am", Path: []string{"Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 08/2015/NĐ-CP"},
-			Text: "9. Sửa đổi, bổ sung Điều 21 như sau:\n\"Điều 21. Tỷ giá mới.\""},
+			Text: "9. Sửa đổi, bổ sung Điều 21 như sau:\n\"Điều 21. Tỷ giá mới.\"\n11. Sửa đổi, bổ sung các khoản 2, 3 và 7 Điều 24 như sau:"},
 		{ID: "multi:article-1:clause-1", DocID: "multi", Path: []string{"Điều 1. Sửa đổi Nghị định số 08/2022/NĐ-CP"},
 			Text: "1. Sửa đổi Điều 30 như sau:"},
 		{ID: "multi:article-2:clause-3", DocID: "multi", Path: []string{"Điều 2. Sửa đổi các nghị định có liên quan", "Khoản 3"},
@@ -52,6 +55,9 @@ func TestSupersededByAmendment(t *testing.T) {
 		"vbhn:article-21:clause-5": true,  // the 2019 VBHN predates the amendment
 		"vbhn:article-22":          true,  // holds clause 3, rewritten in 2025
 		"am:article-1:clause-9~2":  false, // the amendment itself is the law
+		"base:article-24:clause-3": true,  // "các khoản 2, 3 và 7": the middle of a run
+		"base:article-24:clause-7": true,  // and its last number
+		"base:article-24:clause-5": false, // not in the run
 	}
 	for id, want := range cases {
 		if got := c.Superseded(id, "2026-10-27"); got != want {
