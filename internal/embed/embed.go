@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nvtquang/CustomsVN/internal/config"
@@ -39,6 +40,12 @@ type Embedder interface {
 	Dims() int
 	// Embed returns one vector per text, in order.
 	Embed(ctx context.Context, texts []string, kind Kind) ([][]float32, error)
+}
+
+// TokenCounter is an embedder that reports the input tokens its provider
+// billed, so a job can record what embedding the corpus cost.
+type TokenCounter interface {
+	Tokens() int64
 }
 
 // New builds the embedder a config entry describes.
@@ -88,7 +95,12 @@ type client struct {
 	http    *http.Client
 	limit   *limiter
 	request func(ctx context.Context, texts []string, kind Kind) ([][]float32, error)
+	// tokens adds up the usage the provider reports; Gemini reports none.
+	tokens atomic.Int64
 }
+
+// Tokens is the input tokens billed so far.
+func (c *client) Tokens() int64 { return c.tokens.Load() }
 
 func (c *client) Name() string { return c.cfg.Name }
 func (c *client) Dims() int    { return c.cfg.Dims }
@@ -200,10 +212,15 @@ func (c *client) openAI(ctx context.Context, texts []string, _ Kind) ([][]float3
 			Index     int       `json:"index"`
 			Embedding []float32 `json:"embedding"`
 		} `json:"data"`
+		Usage struct {
+			PromptTokens int64 `json:"prompt_tokens"`
+			TotalTokens  int64 `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := c.post(ctx, strings.TrimRight(c.cfg.BaseURL, "/")+"/embeddings", c.bearer(), body, &resp); err != nil {
 		return nil, err
 	}
+	c.tokens.Add(max(resp.Usage.PromptTokens, resp.Usage.TotalTokens))
 	out := make([][]float32, len(texts))
 	for _, d := range resp.Data {
 		if d.Index < 0 || d.Index >= len(out) {
@@ -225,10 +242,15 @@ func (c *client) voyage(ctx context.Context, texts []string, kind Kind) ([][]flo
 			Index     int       `json:"index"`
 			Embedding []float32 `json:"embedding"`
 		} `json:"data"`
+		Usage struct {
+			PromptTokens int64 `json:"prompt_tokens"`
+			TotalTokens  int64 `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := c.post(ctx, strings.TrimRight(c.cfg.BaseURL, "/")+"/embeddings", c.bearer(), body, &resp); err != nil {
 		return nil, err
 	}
+	c.tokens.Add(max(resp.Usage.PromptTokens, resp.Usage.TotalTokens))
 	out := make([][]float32, len(texts))
 	for _, d := range resp.Data {
 		if d.Index < 0 || d.Index >= len(out) {

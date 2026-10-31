@@ -85,6 +85,11 @@ func jobKinds(cfg *config.Config, pool *pgxpool.Pool, e *search.Engine) map[stri
 			}
 			src := models.Sources[emb.Name()]
 			opts := embed.StoreOptions{Limit: p.Limit, Log: log}
+			var before int64
+			if tc, ok := emb.(embed.TokenCounter); ok {
+				before = tc.Tokens()
+				defer func() { recordEmbedUsage(ctx, pool, emb.Name(), src, tc.Tokens()-before, log) }()
+			}
 			var res *embed.StoreResult
 			var err error
 			switch p.Target {
@@ -130,4 +135,30 @@ func afterJob(pool *pgxpool.Pool, e *search.Engine, ts *tools.Toolset) func(cont
 		ts.Reset()
 		return nil
 	}
+}
+
+// recordEmbedUsage writes what an embed job was billed into usage, priced
+// with the stored prices, so the cost screen shows it beside the answers.
+// The embedder is shared, so a question embedded while the job ran is
+// counted here too; next to a corpus that is noise.
+func recordEmbedUsage(ctx context.Context, pool *pgxpool.Pool, name string, src search.Source, tokens int64, log io.Writer) {
+	if tokens <= 0 {
+		return
+	}
+	var cost float64
+	var raw []byte
+	if err := pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'llm_prices'`).Scan(&raw); err == nil {
+		var prices map[string]struct {
+			Input float64 `json:"input"`
+		}
+		if json.Unmarshal(raw, &prices) == nil {
+			cost = float64(tokens) * prices[name].Input / 1e6
+		}
+	}
+	if _, err := pool.Exec(context.WithoutCancel(ctx), `INSERT INTO usage (provider, model, purpose, input_tokens, cost_usd) VALUES ($1, $2, 'embed', $3, $4)`,
+		src.Provider, src.Model, tokens, cost); err != nil {
+		fmt.Fprintf(log, "usage not recorded: %v\n", err)
+		return
+	}
+	fmt.Fprintf(log, "usage: %d tokens, %.4f USD\n", tokens, cost)
 }
