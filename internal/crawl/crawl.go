@@ -55,17 +55,33 @@ type Options struct {
 	Crawler string // the dataset's crawler/ directory: scrapy.cfg, vbpl/, the scripts
 	Python  string // the interpreter with scrapy, polars and pyarrow
 
-	MaxPages    int     // catalogue pages walked, newest first (10)
-	PageSize    int     // documents per catalogue page (100)
-	Concurrency int     // requests in flight (4)
-	Delay       float64 // seconds between requests (0.5)
+	MaxPages    int // catalogue pages walked, newest first (10)
+	PageSize    int // documents per catalogue page (100)
+	Concurrency int // requests in flight at most (4)
+	// TargetConcurrency is the number of requests AutoThrottle aims to keep in
+	// flight (1). With the target at 1, four allowed requests still run
+	// about one at a time, and a slow portal brought the crawl to 4 documents
+	// a minute; raising it to 2 or 3 is the one change that speeds a crawl up.
+	TargetConcurrency float64
+	Delay             float64 // seconds between requests (0.5)
 	// RefreshParts is how many runs it takes to fetch every in-scope
 	// document again (4: about a month at one run a week).
 	RefreshParts int
 	// NoRotation fetches again only the documents the new ones act on, for
 	// a quick run by hand.
 	NoRotation bool
-	Keep       int // crawl revisions kept, the new one included (2)
+	// SkipCatalog leaves the catalogue alone: the newest-first listing is not
+	// ordered by the day a text was signed (its first page holds provincial
+	// texts from 2021 to 2026), so walking pages says nothing about what has
+	// been covered. Seeds are fetched instead, and the texts they relate to.
+	SkipCatalog bool
+	// Tier1 fetches again every document of tier 1; Fill every document in
+	// tiers 1-2 whose text the source did not have last time. Both walk out
+	// one step along the relations, so a text that replaces or amends a seed
+	// (a new law amending the Customs Law) is found from it.
+	Tier1 bool
+	Fill  bool
+	Keep  int // crawl revisions kept, the new one included (2)
 	// CatalogAction overrides the portal's catalogue server action, which
 	// changes when vbpl.vn is redeployed.
 	CatalogAction string
@@ -129,6 +145,7 @@ type Item struct {
 	Field         string              `json:"linh_vuc"`
 	Sector        string              `json:"nganh"`
 	Status        string              `json:"tinh_trang_hieu_luc"`
+	Content       string              `json:"content"`
 	Relationships map[string][]string `json:"relationships"`
 	raw           json.RawMessage
 }
@@ -175,18 +192,21 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 	fresh := filepath.Join(work, "new.jsonl")
-	out, err := opts.scrapy(ctx, work, "new",
-		"-a", "full=1", "-a", "max_pages="+strconv.Itoa(opts.MaxPages), "-a", "page_size="+strconv.Itoa(opts.PageSize),
-		"-a", "resume=1", "-a", "resume_from="+known, "-a", "output="+fresh)
-	if err != nil {
-		return nil, err
-	}
-	news, err := readItems(fresh)
-	if err != nil {
-		return nil, err
-	}
-	if len(news) == 0 && bytes.Contains(out, []byte("catalog action ID may have changed")) {
-		return nil, errors.New("crawl: the vbpl.vn catalogue did not parse; its action ID has likely changed: set CUSTOMSVN_VBPL_ACTION to the new one")
+	var news []Item
+	if !opts.SkipCatalog {
+		out, err := opts.scrapy(ctx, work, "new",
+			"-a", "full=1", "-a", "max_pages="+strconv.Itoa(opts.MaxPages), "-a", "page_size="+strconv.Itoa(opts.PageSize),
+			"-a", "resume=1", "-a", "resume_from="+known, "-a", "output="+fresh)
+		if err != nil {
+			return nil, err
+		}
+		news, err = readItems(fresh)
+		if err != nil {
+			return nil, err
+		}
+		if len(news) == 0 && bytes.Contains(out, []byte("catalog action ID may have changed")) {
+			return nil, errors.New("crawl: the vbpl.vn catalogue did not parse; its action ID has likely changed: set CUSTOMSVN_VBPL_ACTION to the new one")
+		}
 	}
 	res.Fetched = len(news)
 	var keep []Item
@@ -207,6 +227,24 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		parts = 0
 	}
 	seeds := Recheck(keep, scope, parts, now)
+	var fill map[string]bool
+	if opts.Tier1 || opts.Fill {
+		extra, wanted, err := seedsFromDomain(filepath.Join(opts.Data, "customsvn", "prep", "domain.jsonl"), opts.Tier1, opts.Fill)
+		if err != nil {
+			return nil, err
+		}
+		fill = wanted
+		have := map[string]bool{}
+		for _, s := range seeds {
+			have[s] = true
+		}
+		for _, s := range extra {
+			if !have[s] {
+				seeds = append(seeds, s)
+			}
+		}
+		logf("%d seeds: tier 1 %v, texts missing at the source %v", len(seeds), opts.Tier1, opts.Fill)
+	}
 	if len(seeds) > 0 {
 		seedFile := filepath.Join(work, "seeds.txt")
 		if err := os.WriteFile(seedFile, []byte(strings.Join(seeds, "\n")+"\n"), 0o644); err != nil {
@@ -229,7 +267,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		again := filepath.Join(work, "recheck.jsonl")
 		if _, err := opts.scrapy(ctx, work, "recheck",
 			"-a", "seed_file="+seedFile, "-a", "resume=1", "-a", "resume_from="+seen, "-a", "output="+again,
-			"-s", "DEPTH_LIMIT=1", "-s", "CLOSESPIDER_ITEMCOUNT="+strconv.Itoa(len(seeds)+200)); err != nil {
+			"-s", "DEPTH_LIMIT=1", "-s", "CLOSESPIDER_ITEMCOUNT="+strconv.Itoa(len(seeds)+2000)); err != nil {
 			return nil, err
 		}
 		items, err := readItems(again)
@@ -247,7 +285,9 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 				}
 			case scope[it.ID]:
 				res.Rechecked++
-				if Changed(old, it) {
+				// A text the source had none of last time, and has now, is a change
+				// even when its status and dates are as they were.
+				if Changed(old, it) || fill[it.ID] && strings.TrimSpace(it.Content) != "" {
 					res.Changed++
 					keep = append(keep, it)
 				}
@@ -386,12 +426,60 @@ func inScopeKnown(domainPath string, rows []corpus.Row) (map[string]bool, error)
 	return scope, nil
 }
 
+// seedsFromDomain picks the documents to fetch again: every document of tier 1
+// when tier1 is set, and when fill is set every document of tiers 1-2 that
+// prep found without text at the source (status "metadata"). The second
+// result is the set of the latter.
+func seedsFromDomain(domainPath string, tier1, fill bool) ([]string, map[string]bool, error) {
+	f, err := os.Open(domainPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("crawl: %w (run customsvn prep once first)", err)
+	}
+	defer f.Close()
+	var seeds []string
+	wanted := map[string]bool{}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 16<<20)
+	for sc.Scan() {
+		var e struct {
+			SourceURL string `json:"source_url"`
+			Tier      int    `json:"tier"`
+			Status    string `json:"status"`
+			Force     string `json:"force_status"`
+		}
+		// A text that has wholly ended gains no relation that matters.
+		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Tier < corpus.Tier1 || e.Tier > corpus.Tier2 || e.Force == corpus.StatusExpired {
+			continue
+		}
+		id := corpus.ItemID(e.SourceURL)
+		if id == "" {
+			continue
+		}
+		switch {
+		case fill && e.Status == "metadata":
+			wanted[id] = true
+			seeds = append(seeds, id)
+		case tier1 && e.Tier == corpus.Tier1:
+			seeds = append(seeds, id)
+		}
+	}
+	return seeds, wanted, sc.Err()
+}
+
+func (o *Options) targetConcurrency() float64 {
+	if o.TargetConcurrency <= 0 {
+		return 1
+	}
+	return o.TargetConcurrency
+}
+
 func (o *Options) scrapy(ctx context.Context, work, name string, args ...string) ([]byte, error) {
 	base := []string{"-m", "scrapy", "crawl", "vbpl",
 		"-s", "CONCURRENT_REQUESTS=" + strconv.Itoa(o.Concurrency),
 		"-s", "CONCURRENT_REQUESTS_PER_DOMAIN=" + strconv.Itoa(o.Concurrency),
 		"-s", "DOWNLOAD_DELAY=" + strconv.FormatFloat(o.Delay, 'f', -1, 64),
 		"-s", "AUTOTHROTTLE_ENABLED=True",
+		"-s", "AUTOTHROTTLE_TARGET_CONCURRENCY=" + strconv.FormatFloat(o.targetConcurrency(), 'f', -1, 64),
 		"-s", "USER_AGENT=" + o.UserAgent,
 		"-s", "LOG_LEVEL=INFO",
 		"-s", "LOG_FILE=" + filepath.Join(work, name+".log"),

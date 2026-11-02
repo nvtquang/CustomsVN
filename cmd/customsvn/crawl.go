@@ -146,6 +146,10 @@ func runCrawl(args []string) error {
 	fs := flag.NewFlagSet("crawl", flag.ContinueOnError)
 	maxPages := fs.Int("max-pages", crawl.DefaultSchedule().MaxPages, "catalogue pages walked, newest first")
 	rotate := fs.Bool("rotate", true, "also fetch again this week's share of the in-scope documents")
+	targeted := fs.Bool("targeted", false, "skip the catalogue: fetch only the seeds of -tier1 and -fill, and the texts related to them")
+	tier1 := fs.Bool("tier1", false, "fetch again every document of tier 1 (and find the texts that replace or amend them)")
+	target := fs.Float64("target-concurrency", 1, "requests AutoThrottle aims to keep in flight (1 is the polite default; 2-3 speeds a crawl up)")
+	fill := fs.Bool("fill", false, "fetch again every in-scope document whose text the source did not have")
 	if ok, err := parse(fs, args); !ok {
 		return err
 	}
@@ -156,7 +160,7 @@ func runCrawl(args []string) error {
 	ctx, cancel := signalContext()
 	defer cancel()
 	res, err := crawl.Run(ctx, crawl.Options{Data: data, Crawler: crawlerDir(), Python: os.Getenv(PythonEnv),
-		MaxPages: *maxPages, NoRotation: !*rotate, CatalogAction: os.Getenv(ActionEnv), Log: os.Stderr})
+		MaxPages: *maxPages, NoRotation: !*rotate, SkipCatalog: *targeted, TargetConcurrency: *target, Tier1: *tier1, Fill: *fill, CatalogAction: os.Getenv(ActionEnv), Log: os.Stderr})
 	if err != nil {
 		return err
 	}
