@@ -665,6 +665,7 @@ const vi = {
       citation_precision: "Trích dẫn đúng điều",
       expected_cited: "Độ phủ điều kỳ vọng",
       grounded: "Có căn cứ đúng",
+      stale_citations: "Trích dẫn hết hiệu lực",
       first_claim_p50_ms: "Nhận định đầu p50",
       first_claim_p95_ms: "Nhận định đầu p95",
       total_p95_ms: "Tổng thời gian p95",
@@ -680,6 +681,8 @@ const vi = {
       citation_precision: "Trích dẫn rơi vào điều khoản kỳ vọng, trên tổng số trích dẫn.",
       expected_cited: "Trung bình tỷ lệ điều khoản kỳ vọng được trích dẫn.",
       grounded: "Câu trả lời có ít nhất một trích dẫn đúng điều khoản kỳ vọng.",
+      stale_citations:
+        "Số trích dẫn vào điều khoản không còn là luật tại ngày của câu hỏi (văn bản hết hiệu lực hoặc đã bị sửa đổi viết lại). Quy tắc: luôn bằng 0.",
       first_claim_p50_ms: "Thời gian tới nhận định đầu tiên được kiểm chứng, trung vị.",
       first_claim_p95_ms: "Thời gian tới nhận định đầu tiên được kiểm chứng, phân vị 95.",
       total_p95_ms: "Thời gian hoàn tất câu trả lời, phân vị 95.",

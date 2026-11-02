@@ -55,6 +55,11 @@ type AnswerScore struct {
 	// CitationsCorrect counts citations of a chunk that covers an expected
 	// provision.
 	CitationsCorrect int `json:"citations_correct"`
+	// StaleCitations counts citations of a chunk that is not law on the
+	// question's day: its document ended, or an amendment rewrote the chunk.
+	// The answer path filters these out, so anything but 0 is a bug in the
+	// force rules, not a model's slip.
+	StaleCitations int `json:"stale_citations"`
 	// ExpectedCited is the share of expected provisions some citation covers.
 	ExpectedCited float64 `json:"expected_cited"`
 	// Grounded: answered with at least one citation of an expected provision.
@@ -70,7 +75,9 @@ type AnswerScore struct {
 // ScoreAnswer scores one answer against its gold item.
 func ScoreAnswer(c *search.Corpus, it Item, res *answer.Result, err error, cost func(llm.Usage) float64) AnswerScore {
 	var s AnswerScore
+	asOf, today := "", time.Now().Format(time.DateOnly)
 	if res != nil {
+		asOf = res.AsOf
 		s.TotalMS, s.FirstClaimMS = res.TimingMS["total"], res.FirstClaimMS
 		for _, u := range res.Usage {
 			s.InputTokens += u.InputTokens
@@ -102,6 +109,9 @@ func ScoreAnswer(c *search.Corpus, it Item, res *answer.Result, err error, cost 
 			ch := c.Chunks[ct.ChunkID]
 			if ch == nil {
 				continue
+			}
+			if staleChunk(c, ch, asOf, today) {
+				s.StaleCitations++
 			}
 			hit := false
 			for i, want := range it.ExpectedIDs {
@@ -153,13 +163,18 @@ type AnswerMetrics struct {
 	CitationPrecision float64 `json:"citation_precision"`
 	ExpectedCited     float64 `json:"expected_cited"`
 	Grounded          float64 `json:"grounded"`
-	FirstClaimP50     float64 `json:"first_claim_p50_ms"`
-	FirstClaimP95     float64 `json:"first_claim_p95_ms"`
-	TotalP50          float64 `json:"total_p50_ms"`
-	TotalP95          float64 `json:"total_p95_ms"`
-	InputTokens       int     `json:"input_tokens"`
-	OutputTokens      int     `json:"output_tokens"`
-	CostUSD           float64 `json:"cost_usd"`
+	// StaleCitations is how many citations were of a provision no longer law
+	// on the question's day, and StaleAnswers how many answers made one. The
+	// rule is that both are 0.
+	StaleCitations int     `json:"stale_citations"`
+	StaleAnswers   int     `json:"stale_answers"`
+	FirstClaimP50  float64 `json:"first_claim_p50_ms"`
+	FirstClaimP95  float64 `json:"first_claim_p95_ms"`
+	TotalP50       float64 `json:"total_p50_ms"`
+	TotalP95       float64 `json:"total_p95_ms"`
+	InputTokens    int     `json:"input_tokens"`
+	OutputTokens   int     `json:"output_tokens"`
+	CostUSD        float64 `json:"cost_usd"`
 }
 
 // SummarizeAnswers totals scored questions.
@@ -204,6 +219,10 @@ func SummarizeAnswers(items []Item, scores []AnswerScore) AnswerMetrics {
 		}
 		claims += s.Claims
 		made += s.Claims + s.Dropped
+		m.StaleCitations += s.StaleCitations
+		if s.StaleCitations > 0 {
+			m.StaleAnswers++
+		}
 		if !it.ShouldRefuse && len(it.ExpectedIDs) > 0 {
 			withExpected++
 			cites += s.Citations
@@ -234,6 +253,18 @@ func SummarizeAnswers(items []Item, scores []AnswerScore) AnswerMetrics {
 	m.TotalP50, m.TotalP95 = percentile(total, 0.5), percentile(total, 0.95)
 	m.CostUSD = math.Round(m.CostUSD*1e6) / 1e6
 	return m
+}
+
+// staleChunk reports whether a chunk cannot ground an answer on asOf by the
+// corpus's own rules: the force of its document (a consolidated text takes its
+// base's) is neither in force nor partly expired, or an amendment in force
+// rewrote the chunk.
+func staleChunk(c *search.Corpus, ch *search.Chunk, asOf, today string) bool {
+	d := c.Docs[ch.DocID]
+	if d == nil || asOf == "" {
+		return false
+	}
+	return !search.Usable(c.Force(d, asOf, today)) || c.Superseded(ch.ID, asOf)
 }
 
 func ratio(a, b int) float64 {

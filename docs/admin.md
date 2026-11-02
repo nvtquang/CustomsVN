@@ -64,6 +64,20 @@ The model is one line of defence and the code is the other:
 
 Each question's answer is stored, so a run can be opened question by question (problems only by default), and two runs compared metric by metric with the questions whose outcome changed. The run's stored configuration is the one in effect, with the overrides merged in.
 
+First measurements with a real model (`openai/gpt-6-luna` answering and gathering, `google/gemini-3.5-flash` routing), `goldsets/eval60.csv`, graded by hand against the expected answers as well as by the metrics above:
+
+| | 2026-10-30, before the fixes | 2026-10-31, after |
+| --- | --- | --- |
+| Expert score, the 50 original questions | 73% | 89% |
+| Expert score, 10 synthesis questions | — | 80% |
+| Grounded | 0.628 | 0.873 |
+| Citation precision | 0.434 | 0.543 |
+| Refusal accuracy | 0.88 | 0.95 |
+| First claim p50 / p95 | 29.6 s / 43.3 s | 33.7 s / 61.8 s |
+| Cost per run | not priced | $0.28 |
+
+The fixes between the two: the agent's fetched provisions survive the source cap, exception provisions join the sources, rewritten and overridden wording is out (see [retrieval.md](retrieval.md)), provincial-only answers are refused. On `mini10`, run two or three times per configuration, hybrid with the reranker scored 8.0/8.0 against 9.0/9.0 for BM25 and was slower, so retrieval stays BM25; switching the tool loop off cut the first claim to about 10 s but lost 2 to 2.5 points, and a Gemini model for the `agent` role was barely faster at four times the cost. Rewording the prompts made things worse and was reverted. The first claim is still far from the 3 s target.
+
 ## Feedback review
 
 `/admin/feedback` lists ratings by status (open, resolved, dismissed) and by 👍/👎. A feedback opens with the whole conversation (the rated answer framed), the trace (question as understood, intent, timing, dropped claims and why, retrieved chunks, model), a label (wrong citation, missing grounds, wrong refusal, should have refused, wrong force, incomplete, unclear, data gap, other) and a note. **Chuyển thành gold item** resolves the expected provisions against the corpus and adds the question to a gold set (by default `feedback`, which grows item by item), and marks the feedback resolved.

@@ -177,6 +177,8 @@ export interface AnswerMetrics {
   citation_precision: number;
   expected_cited: number;
   grounded: number;
+  stale_citations: number;
+  stale_answers: number;
   first_claim_p50_ms: number;
   first_claim_p95_ms: number;
   total_p50_ms: number;

@@ -42,6 +42,7 @@ const METRICS: { key: keyof AnswerMetrics; kind: "ratio" | "ms" | "usd" | "count
   { key: "citation_precision", kind: "ratio", better: "up" },
   { key: "expected_cited", kind: "ratio", better: "up" },
   { key: "grounded", kind: "ratio", better: "up" },
+  { key: "stale_citations", kind: "count", better: "down" },
   { key: "first_claim_p50_ms", kind: "ms", better: "down" },
   { key: "first_claim_p95_ms", kind: "ms", better: "down" },
   { key: "total_p95_ms", kind: "ms", better: "down" },

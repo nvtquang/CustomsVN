@@ -6,6 +6,7 @@ import (
 
 	"github.com/nvtquang/CustomsVN/internal/answer"
 	"github.com/nvtquang/CustomsVN/internal/llm"
+	"github.com/nvtquang/CustomsVN/internal/search"
 )
 
 func TestScoreAnswers(t *testing.T) {
@@ -55,5 +56,47 @@ func TestScoreAnswers(t *testing.T) {
 		InputTokens: 1000, OutputTokens: 200, CostUSD: 0.0012}
 	if m != want {
 		t.Errorf("metrics\n got %+v\nwant %+v", m, want)
+	}
+}
+
+// An answer that cites a provision no longer law on its day is counted, per
+// citation and per answer: the rule is that the count stays 0.
+func TestStaleCitationsAreCounted(t *testing.T) {
+	const old, now = "vn:law:2013:219-2013-tt-btc", "vn:law:2025:69-2025-tt-btc"
+	c := search.NewCorpus(1, []search.Doc{
+		{ID: old, OfficialNumber: "219/2013/TT-BTC", ForceStatus: "Hết hiệu lực toàn bộ", EffectiveFrom: "2014-01-01", ExpiredOn: "2025-07-01", Status: "parsed", Tier: 2, SourceKind: "original"},
+		{ID: now, OfficialNumber: "69/2025/TT-BTC", ForceStatus: "Còn hiệu lực", EffectiveFrom: "2025-07-01", Status: "parsed", Tier: 2, SourceKind: "original"},
+	}, []search.Chunk{
+		{ID: old + ":article-12", DocID: old, Text: "cũ", Tier: 2, SourceKind: "original"},
+		{ID: now + ":article-5", DocID: now, Text: "mới", Tier: 2, SourceKind: "original"},
+	})
+	cite := func(chunk ...string) answer.Claim {
+		var cl answer.Claim
+		for _, id := range chunk {
+			cl.Citations = append(cl.Citations, answer.Citation{ChunkID: id, Verified: true})
+		}
+		return cl
+	}
+	items := []Item{{ExtID: "a"}, {ExtID: "b"}}
+	res := []*answer.Result{
+		{AsOf: "2026-10-31", Claims: []answer.Claim{cite(now+":article-5", old+":article-12"), cite(old + ":article-12")}},
+		{AsOf: "2026-10-31", Claims: []answer.Claim{cite(now + ":article-5")}},
+	}
+	var scores []AnswerScore
+	for i, it := range items {
+		scores = append(scores, ScoreAnswer(c, it, res[i], nil, nil))
+	}
+	if scores[0].StaleCitations != 2 || scores[1].StaleCitations != 0 {
+		t.Errorf("per answer %d, %d", scores[0].StaleCitations, scores[1].StaleCitations)
+	}
+	m := SummarizeAnswers(items, scores)
+	if m.StaleCitations != 2 || m.StaleAnswers != 1 {
+		t.Errorf("metrics %d citations in %d answers", m.StaleCitations, m.StaleAnswers)
+	}
+	// On a day the old text was law, it is not stale, and the new one, not in
+	// force yet, is.
+	res[0].AsOf = "2025-01-01"
+	if s := ScoreAnswer(c, items[0], res[0], nil, nil); s.StaleCitations != 1 {
+		t.Errorf("a day before the expiry: %d stale, want only the text not in force yet", s.StaleCitations)
 	}
 }

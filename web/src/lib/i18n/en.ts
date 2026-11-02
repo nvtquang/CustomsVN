@@ -667,6 +667,7 @@ const en: Messages = {
       citation_precision: "Citation precision",
       expected_cited: "Expected cited",
       grounded: "Grounded",
+      stale_citations: "Stale citations",
       first_claim_p50_ms: "First claim p50",
       first_claim_p95_ms: "First claim p95",
       total_p95_ms: "Total p95",
@@ -682,6 +683,8 @@ const en: Messages = {
       citation_precision: "Citations of an expected provision over all citations.",
       expected_cited: "Mean share of expected provisions cited.",
       grounded: "Answers with at least one citation of an expected provision.",
+      stale_citations:
+        "Citations of a provision that is no longer law on the question's day (its document ended, or an amendment rewrote it). The rule: always 0.",
       first_claim_p50_ms: "Time to the first verified claim, median.",
       first_claim_p95_ms: "Time to the first verified claim, 95th percentile.",
       total_p95_ms: "Time to the finished answer, 95th percentile.",
