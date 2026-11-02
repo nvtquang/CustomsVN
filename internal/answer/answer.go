@@ -53,12 +53,17 @@ type Citation struct {
 type Claim struct {
 	Text      string     `json:"text"`
 	Citations []Citation `json:"citations"`
+	// Part is the part of a multi-part question the claim answers (1-based),
+	// 0 when the question has one part.
+	Part int `json:"part,omitempty"`
 }
 
 // Dropped is a claim the verifier refused, and why.
 type Dropped struct {
 	Text   string `json:"text"`
 	Reason string `json:"reason"`
+	// Quote is the quote that was not found in its source, when that is why.
+	Quote string `json:"quote,omitempty"`
 }
 
 // Refusal is an answer that declines, with ways to ask again.
@@ -91,8 +96,11 @@ type Result struct {
 	Dropped    []Dropped `json:"dropped,omitempty"`
 	// Gaps name the parts of the question the sources do not answer. They
 	// state an absence, never a rule, and carry no citation.
-	Gaps    []string `json:"gaps,omitempty"`
-	Refusal *Refusal `json:"refusal,omitempty"`
+	Gaps []string `json:"gaps,omitempty"`
+	// GapParts is, for each gap, the part of the question it stands for (0
+	// when it names none).
+	GapParts []int    `json:"-"`
+	Refusal  *Refusal `json:"refusal,omitempty"`
 	// Clarify is a question back to the reader when the answer depends on
 	// something the question left out.
 	Clarify       string               `json:"clarify,omitempty"`
@@ -184,6 +192,11 @@ type Answerer struct {
 var ErrNoModel = llm.ErrNoModel
 
 var (
+	// codeNamed is a question that names an HS code ("mã 8703.23", "mã số
+	// 8703"). The word "mã" alone is not one: "xác định mã số (ảnh hưởng đến
+	// thuế suất)" asks about release of goods, and was refused as a rate
+	// question.
+	codeNamed = regexp.MustCompile(`(?i)(?:^|[^\p{L}])mã(?:\s+(?:hs|số(?:\s+hàng hóa)?))?\s*:?\s*\d{4}`)
 	tariffAsk = regexp.MustCompile(`(?i)thuế suất|mức thuế|biểu thuế|thuế nhập khẩu (?:là )?bao nhiêu|thuế xuất khẩu (?:là )?bao nhiêu`)
 	// selfMarker is an [n] the model wrote into a claim. Markers are added
 	// from the verified citations only, so a written one could point at a
@@ -251,7 +264,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	// not in the corpus, and a rate guessed from a decree's text is a wrong
 	// answer that looks right.
 	found := refs.Parse(res.Standalone)
-	if tariffAsk.MatchString(res.Standalone) && (len(found.HSCodes) > 0 || strings.Contains(strings.ToLower(res.Standalone), "mã")) {
+	if tariffAsk.MatchString(res.Standalone) && (len(found.HSCodes) > 0 || codeNamed.MatchString(res.Standalone)) {
 		return a.refuse(res, emit, &Refusal{Code: "tariff",
 			Reason: "CustomsVN chưa có dữ liệu biểu thuế xuất nhập khẩu, nên không trả lời được thuế suất của một mã hàng cụ thể.",
 			Suggestions: []string{"Tra thuế suất trên Biểu thuế xuất nhập khẩu do Chính phủ ban hành hoặc cổng thông tin của Tổng cục Hải quan.",
@@ -320,6 +333,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			Suggestions []string `json:"suggestions"`
 			Gap         string   `json:"gap"`
 			End         bool     `json:"end"`
+			Part        int      `json:"part"`
 		}
 		if err := json.Unmarshal([]byte(raw), &out); err != nil {
 			res.Dropped = append(res.Dropped, Dropped{Text: truncate(raw, 200), Reason: "not_json"})
@@ -330,11 +344,12 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			// A gap is the model's free text: short, with nothing to click,
 			// and at most three of them.
 			g := strings.TrimSpace(selfMarker.ReplaceAllString(out.Gap, ""))
-			if g == "" || len([]rune(g)) > 300 || !Unlinked(g) || len(res.Gaps) == 3 {
+			if g == "" || len([]rune(g)) > 300 || !Unlinked(g) || len(res.Gaps) == maxGaps {
 				res.Dropped = append(res.Dropped, Dropped{Text: truncate(out.Gap, 300), Reason: "gap"})
 				return emit(Event{Type: "dropped", Dropped: &res.Dropped[len(res.Dropped)-1]})
 			}
 			res.Gaps = append(res.Gaps, g)
+			res.GapParts = append(res.GapParts, out.Part)
 			return emit(Event{Type: "gap", Text: g})
 		case out.Refuse != "":
 			refusal = &Refusal{Code: "out_of_scope", Reason: out.Refuse}
@@ -351,8 +366,8 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		case out.End || out.Claim == "":
 			return nil
 		}
-		claim := Claim{Text: strings.TrimSpace(selfMarker.ReplaceAllString(out.Claim, ""))}
-		reason := ""
+		claim := Claim{Text: strings.TrimSpace(selfMarker.ReplaceAllString(out.Claim, "")), Part: out.Part}
+		reason, badQuote := "", ""
 		if len(out.Citations) == 0 {
 			reason = "no_citation"
 		}
@@ -363,7 +378,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			}
 			h := hits[c.Source-1]
 			if !Verbatim(h.Chunk.Text, c.Quote) {
-				reason = "quote_not_found"
+				reason, badQuote = "quote_not_found", truncate(c.Quote, 300)
 				break
 			}
 			if !search.Usable(h.Force) {
@@ -388,7 +403,7 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 			}
 		}
 		if reason != "" {
-			res.Dropped = append(res.Dropped, Dropped{Text: truncate(out.Claim, 300), Reason: reason})
+			res.Dropped = append(res.Dropped, Dropped{Text: truncate(out.Claim, 300), Reason: reason, Quote: badQuote})
 			return emit(Event{Type: "dropped", Dropped: &res.Dropped[len(res.Dropped)-1]})
 		}
 		res.Claims = append(res.Claims, claim)
@@ -397,24 +412,28 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 		}
 		return emit(Event{Type: "claim", Claim: &res.Claims[len(res.Claims)-1]})
 	}
-	resp, err := router.Stream(ctx, llm.RoleAnswer, llm.Request{System: prompts.compose(), MaxTokens: 3000,
-		Messages: []llm.Message{{Role: "user", Content: composeUser(res.Standalone, hits, asOf, cardsNote(res.Cards))}}},
-		func(delta string) error {
-			for {
-				i := strings.IndexByte(delta, '\n')
-				if i < 0 {
-					line.WriteString(delta)
-					return nil
+	compose := func(note string) (*llm.Response, error) {
+		line.Reset()
+		return router.Stream(ctx, llm.RoleAnswer, llm.Request{System: prompts.compose(), MaxTokens: 3000,
+			Messages: []llm.Message{{Role: "user", Content: composeUser(res.Standalone, hits, asOf, cardsNote(res.Cards)+partsNote(res.Intent.Parts)+expiredNote(res)+note)}}},
+			func(delta string) error {
+				for {
+					i := strings.IndexByte(delta, '\n')
+					if i < 0 {
+						line.WriteString(delta)
+						return nil
+					}
+					line.WriteString(delta[:i])
+					l := line.String()
+					line.Reset()
+					if err := handle(l); err != nil {
+						return err
+					}
+					delta = delta[i+1:]
 				}
-				line.WriteString(delta[:i])
-				l := line.String()
-				line.Reset()
-				if err := handle(l); err != nil {
-					return err
-				}
-				delta = delta[i+1:]
-			}
-		})
+			})
+	}
+	resp, err := compose("")
 	if err != nil {
 		// Claims already shown stay shown; the caller stores them with the
 		// error so the reader sees where the answer stopped.
@@ -426,6 +445,40 @@ func (a *Answerer) Answer(ctx context.Context, in Input, emit func(Event) error)
 	}
 	res.Provider, res.Model = resp.Provider, resp.Model
 	addUsage(res, llm.RoleAnswer, resp.Usage)
+	// Every claim failed on its quote, though the model had the sources: it
+	// paraphrased, or joined two items of a list, or changed a word. Ask once
+	// more, telling it which claims fell and how a quote must be copied. The
+	// second try is verified like the first, so nothing unverified is shown.
+	if note := repairNote(res, refusal != nil); note != "" {
+		if err := emit(Event{Type: "status", Stage: "repair"}); err != nil {
+			return nil, err
+		}
+		resp, err := compose(note)
+		if err != nil {
+			lap("compose", t)
+			return res, err
+		}
+		if err := handle(line.String()); err != nil {
+			return nil, err
+		}
+		addUsage(res, "repair", resp.Usage)
+	}
+	// A question of several parts is answered in all of them: a part with no
+	// claim and no gap is asked for once more, and only that part.
+	if miss := missingParts(res, len(res.Intent.Parts)); len(miss) > 0 && refusal == nil {
+		if err := emit(Event{Type: "status", Stage: "cover"}); err != nil {
+			return nil, err
+		}
+		resp, err := compose(coverNote(res.Intent.Parts, miss))
+		if err != nil {
+			lap("compose", t)
+			return res, err
+		}
+		if err := handle(line.String()); err != nil {
+			return nil, err
+		}
+		addUsage(res, "cover", resp.Usage)
+	}
 	lap("compose", t)
 
 	switch {

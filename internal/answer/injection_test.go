@@ -65,7 +65,8 @@ func TestInjectionAttacks(t *testing.T) {
 		dropped:  "not_json", refusal: "unverified",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
-			a, fake := answerer(tc.reply)
+			// A quote that fell is tried once more; the repair reply is the same.
+			a, fake := answerer(tc.reply, tc.reply)
 			_, emit := collect(t)
 			res, err := a.Answer(context.Background(), Input{Question: tc.question}, emit)
 			if err != nil {
@@ -74,16 +75,22 @@ func TestInjectionAttacks(t *testing.T) {
 			if len(res.Claims) != 0 {
 				t.Fatalf("an obeyed injection reached the reader: %+v", res.Claims)
 			}
-			if len(res.Dropped) != 1 || res.Dropped[0].Reason != tc.dropped {
-				t.Errorf("dropped %+v, want %s", res.Dropped, tc.dropped)
+			wantDropped := 1
+			if tc.dropped == "quote_not_found" {
+				wantDropped = 2
+			}
+			if len(res.Dropped) != wantDropped || res.Dropped[0].Reason != tc.dropped {
+				t.Errorf("dropped %+v, want %d of %s", res.Dropped, wantDropped, tc.dropped)
 			}
 			if res.Refusal == nil || res.Refusal.Code != tc.refusal {
 				t.Errorf("refusal %+v, want %s", res.Refusal, tc.refusal)
 			}
 			// The question reaches the model fenced, once.
-			prompt := fake.Calls[0].Messages[0].Content
-			if strings.Count(prompt, "<question>") != 1 || strings.Count(prompt, "</question>") != 1 {
-				t.Errorf("question not fenced once:\n%s", prompt)
+			for _, call := range fake.Calls {
+				prompt := call.Messages[0].Content
+				if strings.Count(prompt, "<question>") != 1 || strings.Count(prompt, "</question>") != 1 {
+					t.Errorf("question not fenced once:\n%s", prompt)
+				}
 			}
 		})
 	}

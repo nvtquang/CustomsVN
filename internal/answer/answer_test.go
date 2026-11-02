@@ -78,14 +78,50 @@ func TestVerifiedClaimsAreShownAndOthersDropped(t *testing.T) {
 }
 
 func TestNothingVerifiedIsARefusal(t *testing.T) {
-	a, _ := answerer(`{"claim": "Bịa.", "citations": [{"source": 1, "quote": "một câu không có trong văn bản nào cả"}]}`)
+	bad := `{"claim": "Bịa.", "citations": [{"source": 1, "quote": "một câu không có trong văn bản nào cả"}]}`
+	a, fake := answerer(bad, bad) // the second is the repair try, which fails the same way
 	_, emit := collect(t)
 	res, err := a.Answer(context.Background(), Input{Question: "Quyền của người khai hải quan?"}, emit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Refusal == nil || res.Refusal.Code != "unverified" || len(res.Claims) != 0 {
-		t.Errorf("%+v", res)
+	if res.Refusal == nil || res.Refusal.Code != "unverified" || len(res.Claims) != 0 || len(fake.Calls) != 2 {
+		t.Errorf("%+v calls %d", res, len(fake.Calls))
+	}
+}
+
+// A model that paraphrased a quote gets one more try, told which claim fell;
+// what it then copies exactly is shown, and nothing else is.
+func TestAQuoteThatFellGetsOneRepairTry(t *testing.T) {
+	bad := `{"claim": "Người khai được yêu cầu xác định trước mã số.", "citations": [{"source": 1, "quote": "yêu cầu xác định trước mã số hàng hóa theo ý tôi"}]}`
+	good := `{"claim": "Người khai được yêu cầu xác định trước mã số.", "citations": [{"source": 1, "quote": "Yêu cầu cơ quan hải quan xác định trước mã số, xuất xứ, trị giá hải quan đối với hàng hóa"}]}`
+	a, fake := answerer(bad, good)
+	evs, emit := collect(t)
+	res, err := a.Answer(context.Background(), Input{Question: "Người khai hải quan có được xác định trước mã số không?"}, emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Claims) != 1 || len(res.Dropped) != 1 || res.Refusal != nil || len(fake.Calls) != 2 {
+		t.Fatalf("claims %+v dropped %+v calls %d", res.Claims, res.Dropped, len(fake.Calls))
+	}
+	retry := fake.Calls[1].Messages[0].Content
+	if !strings.Contains(retry, "LẦN TRƯỚC") || !strings.Contains(retry, "Người khai được yêu cầu xác định trước mã số") {
+		t.Errorf("the repair prompt does not say what fell:\n%s", retry)
+	}
+	if strings.Contains(fake.Calls[0].Messages[0].Content, "LẦN TRƯỚC") {
+		t.Error("the first try carried a repair note")
+	}
+	repaired := false
+	for _, e := range *evs {
+		repaired = repaired || e.Stage == "repair"
+	}
+	if !repaired {
+		t.Error("no repair status event")
+	}
+	// A model that answered well the first time is not asked twice.
+	a, fake = answerer(good)
+	if _, err := a.Answer(context.Background(), Input{Question: "Người khai hải quan có được xác định trước mã số không?"}, emit); err != nil || len(fake.Calls) != 1 {
+		t.Errorf("err %v calls %d", err, len(fake.Calls))
 	}
 }
 
@@ -179,5 +215,49 @@ func TestStoredPromptsReplaceTheDefaultsButNotTheContract(t *testing.T) {
 	sys := fake.Calls[len(fake.Calls)-1].System
 	if !strings.HasPrefix(sys, "Trả lời thật ngắn.") || !strings.Contains(sys, `{"end": true}`) || strings.Contains(sys, "chuyên viên tư vấn") {
 		t.Errorf("compose system %q", sys)
+	}
+}
+
+// A part the composer left out is asked for once more, and the second try is
+// verified like the first.
+func TestAPartLeftOutIsAskedForOnce(t *testing.T) {
+	quote := `"quote": "Yêu cầu cơ quan hải quan xác định trước mã số, xuất xứ, trị giá hải quan đối với hàng hóa"`
+	first := `{"claim": "Người khai được yêu cầu xác định trước mã số.", "part": 1, "citations": [{"source": 1, ` + quote + `}]}`
+	second := `{"claim": "Cũng được xác định trước xuất xứ.", "part": 2, "citations": [{"source": 1, ` + quote + `}]}`
+	routerReply := `{"intent": "regulation", "clarify": "", "parts": ["Xác định trước mã số?", "Xác định trước xuất xứ?"]}`
+	a, fake := answerer(first, second)
+	rt := &llm.Scripted{ProviderName: "fake", Replies: []string{routerReply}}
+	r := llm.NewRouter()
+	r.Set(llm.RoleAnswer, llm.Target{Provider: fake, Model: "m"})
+	r.Set(llm.RoleRouter, llm.Target{Provider: rt, Model: "m"})
+	a.Router = func() *llm.Router { return r }
+	evs, emit := collect(t)
+	res, err := a.Answer(context.Background(), Input{Question: "Người khai hải quan có được xác định trước mã số và xuất xứ không?"}, emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Claims) != 2 || res.Claims[0].Part != 1 || res.Claims[1].Part != 2 || len(fake.Calls) != 2 {
+		t.Fatalf("claims %+v calls %d", res.Claims, len(fake.Calls))
+	}
+	if !strings.Contains(fake.Calls[1].Messages[0].Content, "LẦN TRƯỚC chưa trả lời") || !strings.Contains(fake.Calls[1].Messages[0].Content, "2. Xác định trước xuất xứ?") {
+		t.Errorf("the cover prompt does not name the missing part:\n%s", fake.Calls[1].Messages[0].Content)
+	}
+	covered := false
+	for _, e := range *evs {
+		covered = covered || e.Stage == "cover"
+	}
+	if !covered {
+		t.Error("no cover status event")
+	}
+	// A gap counts as an answer to its part: nothing more is asked.
+	gap := `{"gap": "Chưa có căn cứ về xuất xứ.", "part": 2}`
+	a, fake = answerer(first + "\n" + gap)
+	rt = &llm.Scripted{ProviderName: "fake", Replies: []string{routerReply}}
+	r = llm.NewRouter()
+	r.Set(llm.RoleAnswer, llm.Target{Provider: fake, Model: "m"})
+	r.Set(llm.RoleRouter, llm.Target{Provider: rt, Model: "m"})
+	a.Router = func() *llm.Router { return r }
+	if res, err := a.Answer(context.Background(), Input{Question: "Người khai hải quan có được xác định trước mã số và xuất xứ không?"}, emit); err != nil || len(fake.Calls) != 1 || len(res.Gaps) != 1 {
+		t.Errorf("err %v calls %d", err, len(fake.Calls))
 	}
 }
