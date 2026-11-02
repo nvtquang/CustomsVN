@@ -166,14 +166,36 @@ func scanDoc(row pgx.Row) (Doc, error) {
 }
 
 // findDoc resolves a document named by identifier, official number or law
-// name. A number shared by several documents (a provincial number repeats in
-// every province) prefers the one in the corpus, then the most recent.
+// name. See findDocs for what a shared number prefers.
 func (t *Toolset) findDoc(ctx context.Context, ref, asOf string) (Doc, error) {
+	d, _, err := t.findDocs(ctx, ref, asOf)
+	return d, err
+}
+
+// candidate is a registry row that shares a number with the one asked for.
+type candidate struct {
+	Doc
+	tier   int
+	hinted bool
+	usable bool
+}
+
+// findDocs is findDoc that also returns the other documents sharing the
+// number, so a reader is told when the card could be about another one.
+//
+// A number is not an identity: a VBHN number repeats across years and
+// ministries (18/VBHN-BTC is both a 2023 text on cars of privileged persons
+// and a 2026 one on VAT), and a provincial number repeats in every province.
+// Among the documents sharing it, the one the answer is already working from
+// (WithDocHints) comes first, then one in the corpus, then one in force on
+// asOf, then the lowest tier, then the most recent.
+func (t *Toolset) findDocs(ctx context.Context, ref, asOf string) (Doc, []Doc, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return Doc{}, errors.New("cần nêu văn bản")
+		return Doc{}, nil, errors.New("cần nêu văn bản")
 	}
 	c := t.Engine.Corpus()
+	today := t.Engine.Now().Format(time.DateOnly)
 	var id string
 	switch {
 	case strings.HasPrefix(ref, "vn:"):
@@ -181,39 +203,139 @@ func (t *Toolset) findDoc(ctx context.Context, ref, asOf string) (Doc, error) {
 	default:
 		if f := refs.Parse(ref); len(f.Numbers) > 0 {
 			ref = f.Numbers[0]
-		} else if d := c.ResolveDoc("", ref, asOf, t.Engine.Now().Format(time.DateOnly)); d != nil {
+		} else if d := c.ResolveDoc("", ref, asOf, today); d != nil {
 			id = d.ID
 		}
 	}
-	var row pgx.Row
+	var cands []candidate
+	q, arg := `SELECT `+columns("")+`, tier FROM registry WHERE number_norm = $1 LIMIT 40`, any(corpus.NormNumber(ref))
 	if id != "" {
-		row = t.Pool.QueryRow(ctx, `SELECT `+columns("")+` FROM registry WHERE id = $1`, id)
-	} else {
-		row = t.Pool.QueryRow(ctx, `SELECT `+columns("")+` FROM registry WHERE number_norm = $1
-			ORDER BY (id IN (SELECT id FROM documents)) DESC, tier, signed_on DESC NULLS LAST LIMIT 1`, corpus.NormNumber(ref))
+		q, arg = `SELECT `+columns("")+`, tier FROM registry WHERE id = $1`, any(id)
 	}
-	d, err := scanDoc(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Doc{}, fmt.Errorf("%w: %s", errNotFound, ref)
-	}
+	rows, err := t.Pool.Query(ctx, q, arg)
 	if err != nil {
-		return Doc{}, err
+		return Doc{}, nil, err
 	}
-	d.InCorpus = c.Docs[d.ID] != nil
-	return d, nil
+	defer rows.Close()
+	hints := docHints(ctx)
+	for rows.Next() {
+		var k candidate
+		d := &k.Doc
+		if err := rows.Scan(&d.ID, &d.Number, &d.Title, &d.DocType, &d.IssuingBody, &d.SignedOn, &d.EffectiveFrom,
+			&d.ExpiredOn, &d.ForceStatus, &d.SourceURL, &k.tier); err != nil {
+			return Doc{}, nil, err
+		}
+		d.InCorpus = c.Docs[d.ID] != nil
+		k.hinted = hints[d.ID]
+		f, _ := t.forceOf(*d, asOf)
+		k.usable = search.Usable(f)
+		cands = append(cands, k)
+	}
+	if err := rows.Err(); err != nil {
+		return Doc{}, nil, err
+	}
+	if len(cands) == 0 {
+		return Doc{}, nil, fmt.Errorf("%w: %s", errNotFound, ref)
+	}
+	rankCandidates(cands)
+	var others []Doc
+	for _, k := range cands[1:] {
+		others = append(others, k.Doc)
+	}
+	return cands[0].Doc, others, nil
+}
+
+// rankCandidates puts the document a bare number most likely means first.
+func rankCandidates(cands []candidate) {
+	sort.SliceStable(cands, func(i, j int) bool {
+		a, b := cands[i], cands[j]
+		switch {
+		case a.hinted != b.hinted:
+			return a.hinted
+		case a.InCorpus != b.InCorpus:
+			return a.InCorpus
+		case a.usable != b.usable:
+			return a.usable
+		case a.tier != b.tier:
+			return a.tier < b.tier
+		}
+		return a.SignedOn > b.SignedOn
+	})
+}
+
+// forceOf is a document's force on asOf, and a sentence saying where that
+// force comes from when it is not the document's own label.
+//
+// A consolidated text (VBHN) has the force of the instrument it consolidates:
+// vbpl.vn labels almost every VBHN "Chưa xác định", and reading that label as
+// "not in force" showed 18/VBHN-BTC as ended under citations the corpus holds
+// as in force. This is the rule the corpus applies to its chunks (Corpus.Force).
+func (t *Toolset) forceOf(d Doc, asOf string) (force, note string) {
+	c := t.Engine.Corpus()
+	today := t.Engine.Now().Format(time.DateOnly)
+	if cd := c.Docs[d.ID]; cd != nil {
+		force = c.Force(cd, asOf, today)
+		if cd.SourceKind != corpus.SourceConsolidated {
+			if e, gone := c.EndedBy(cd.ID, asOf); gone {
+				return force, endedNote(c, e)
+			}
+			return force, ""
+		}
+		base := c.Docs[cd.Consolidates]
+		if base == nil {
+			return force, "Văn bản hợp nhất; văn bản gốc không có trong kho nên chưa xác định được hiệu lực."
+		}
+		if e, gone := c.EndedBy(base.ID, asOf); gone {
+			return force, "Văn bản hợp nhất của " + base.OfficialNumber + ". " + endedNote(c, e)
+		}
+		return force, "Văn bản hợp nhất: hiệu lực theo văn bản gốc " + base.OfficialNumber + " (" + forceVI[force] + ")."
+	}
+	m := corpus.Meta{ForceStatus: d.ForceStatus, EffectiveFrom: d.EffectiveFrom, ExpiredOn: d.ExpiredOn}
+	return search.ForceAt(m, asOf, today), ""
+}
+
+// endedNote says which text replaced a document as a whole and from when.
+func endedNote(c *search.Corpus, e search.Ended) string {
+	by := e.By
+	if d := c.Docs[e.By]; d != nil {
+		by = d.OfficialNumber
+	}
+	return "Đã hết hiệu lực toàn bộ từ " + e.On + ": bị " + by + " thay thế hoặc bãi bỏ, dù nguồn vẫn ghi nhãn cũ."
+}
+
+// sameNumberNote lists the other documents that carry the number the card is
+// about, so the reader can see it might be a different one.
+func sameNumberNote(others []Doc) string {
+	if len(others) == 0 {
+		return ""
+	}
+	var parts []string
+	for i, o := range others {
+		if i == 3 {
+			parts = append(parts, fmt.Sprintf("và %d văn bản khác", len(others)-i))
+			break
+		}
+		year := o.SignedOn
+		if len(year) >= 4 {
+			year = year[:4]
+		}
+		parts = append(parts, "ký năm "+year+": "+truncate(o.Title, 90))
+	}
+	return "Còn văn bản khác cùng số hiệu " + others[0].Number + " (" + strings.Join(parts, "; ") + ")."
 }
 
 func (t *Toolset) documentStatus(ctx context.Context, ref, asOf string) (*Result, error) {
-	d, err := t.findDoc(ctx, ref, asOf)
+	d, others, err := t.findDocs(ctx, ref, asOf)
 	if err != nil {
 		return nil, err
 	}
-	today := t.Engine.Now().Format(time.DateOnly)
 	st := Status{Doc: d, AsOf: asOf}
-	m := corpus.Meta{ForceStatus: d.ForceStatus, EffectiveFrom: d.EffectiveFrom, ExpiredOn: d.ExpiredOn}
-	st.Force = search.ForceAt(m, asOf, today)
+	st.Force, st.Note = t.forceOf(d, asOf)
 	if label := strings.TrimSpace(d.ForceStatus); label == corpus.StatusInForce && st.Force == "" && d.ExpiredOn != "" {
 		st.Note = "Nguồn vẫn ghi \"Còn hiệu lực\" nhưng ngày hết hiệu lực " + d.ExpiredOn + " đã qua."
+	}
+	if n := sameNumberNote(others); n != "" {
+		st.Note = strings.TrimSpace(st.Note + " " + n)
 	}
 	if cd := t.Engine.Corpus().Docs[d.ID]; cd != nil && cd.ConsolidatedIn != "" {
 		if v, err := scanDoc(t.Pool.QueryRow(ctx, `SELECT `+columns("")+` FROM registry WHERE id = $1`, cd.ConsolidatedIn)); err == nil {
@@ -291,7 +413,7 @@ func (t *Toolset) amendments(ctx context.Context, ref, asOf string) (*Result, er
 		return nil, err
 	}
 	tl := Timeline{Doc: d, AsOf: asOf}
-	tl.Force = search.ForceAt(corpus.Meta{ForceStatus: d.ForceStatus, EffectiveFrom: d.EffectiveFrom, ExpiredOn: d.ExpiredOn}, asOf, t.Engine.Now().Format(time.DateOnly))
+	tl.Force, _ = t.forceOf(d, asOf)
 	if d.SignedOn != "" {
 		tl.Events = append(tl.Events, Event{Date: d.SignedOn, Kind: "issued", Doc: d})
 	}

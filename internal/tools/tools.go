@@ -41,6 +41,25 @@ func (t *Toolset) Reset() {
 	t.hsMu.Unlock()
 }
 
+type hintKey struct{}
+
+// WithDocHints tells the tools which documents the caller is already working
+// from. A tool handed a bare number that several documents share (18/VBHN-BTC
+// of 2023 and of 2026) answers for the one among them in the hints, instead of
+// guessing from the number alone.
+func WithDocHints(ctx context.Context, ids []string) context.Context {
+	m := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		m[id] = true
+	}
+	return context.WithValue(ctx, hintKey{}, m)
+}
+
+func docHints(ctx context.Context) map[string]bool {
+	m, _ := ctx.Value(hintKey{}).(map[string]bool)
+	return m
+}
+
 // Card is structured data the chat screen shows as it is: a status, a
 // timeline, HS lines.
 type Card struct {
