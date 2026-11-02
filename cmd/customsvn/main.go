@@ -60,6 +60,8 @@ func run(args []string) error {
 		return runServe(args[1:])
 	case "eval":
 		return runEval(args[1:])
+	case "ask":
+		return runAsk(args[1:])
 	case "bootstrap":
 		return runBootstrap(args[1:])
 	case "mcp":
@@ -83,6 +85,7 @@ func usage() error {
   embed -model NAME  embed new and changed chunks
   serve              serve the API and the Web UI
   eval -goldset FILE run a gold set against the retriever and print metrics
+  ask -questions F -out F  put a list of questions through the whole answer (no login), for grading
   bootstrap          first data load: luatdo, prep, migrate, ingest
   mcp                serve MCP over stdin/stdout (the server also serves it at /mcp)
   user list|add|passwd  manage accounts of the Web UI

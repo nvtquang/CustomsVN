@@ -40,7 +40,7 @@ func newEngine(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	if err != nil {
 		return nil, nil, err
 	}
-	log.Info("corpus loaded", "version", c.Version, "documents", len(c.Docs), "chunks", len(c.Chunks), "ms", time.Since(start).Milliseconds())
+	log.Info("corpus loaded", "version", c.Version, "documents", len(c.Docs), "chunks", len(c.Chunks), "rewritten_chunks", c.StaleCount(), "ended_documents", c.EndedCount(), "ms", time.Since(start).Milliseconds())
 	e := search.NewEngine(c)
 	e.Pool = pool
 	models := search.NewModels()
