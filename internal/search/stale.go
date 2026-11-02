@@ -12,6 +12,9 @@ type Amendment struct {
 	From     string // the amending document
 	ToDoc    string // the amended document, when the edge names it
 	ToNumber string // its official number otherwise
+	// Relation is what vbpl.vn calls the edge (amends, replaces, repeals,
+	// expires), empty for an edge found in the text.
+	Relation string
 }
 
 // A line that instructs a change: "8. Sửa đổi, bổ sung khoản 1, khoản 2
@@ -86,6 +89,113 @@ func superseded(c *Corpus, edges []Amendment) map[string]string {
 		}
 	}
 	return out
+}
+
+// Ended is how a document stopped being law as a whole: the document whose
+// text says so and the day that text took effect.
+type Ended struct {
+	By string
+	On string
+}
+
+// endsAsAWhole matches a line that names an instrument as one the new text
+// ends: "Thông tư này thay thế Thông tư số 38/2018/TT-BTC" on one line, or an
+// item "a) Thông tư số 219/2013/TT-BTC ..." under a lead-in such as "Thông tư
+// này thay thế:". An item that opens with an article, a chapter or an annex
+// ("Điều 3 Thông tư số 119/2014/TT-BTC") ends a part, not the instrument, and
+// does not match.
+var (
+	endsInline = regexp.MustCompile(`(?i)(?:thay thế|bãi bỏ|hết hiệu lực)[:\s,]+(?:toàn bộ\s+)?(?:các\s+)?` + docType + `\s[^;.]{0,160}?(\d+/(?:\d{4}/)?[\p{L}\-]+)`)
+	endsItem   = regexp.MustCompile(`(?i)^(?:[a-zđ]\)|\d+[.)]|[-–•])?\s*` + docType + `\s`)
+	endsLead   = regexp.MustCompile(`(?i)(?:thay thế|bãi bỏ|hết hiệu lực)`)
+	partLead   = regexp.MustCompile(`(?i)quy định tại|một số điều|một phần|điều\s+\d|khoản\s+\d`)
+	listMark   = regexp.MustCompile(`^(?:[a-zđ]\)|\d+[.)]|[-–•])\s*`)
+)
+
+const docType = `(?:Luật|Bộ luật|Pháp lệnh|Nghị quyết|Nghị định|Thông tư(?: liên tịch)?|Quyết định|Chỉ thị)`
+
+// endedAsAWhole finds the documents a later text replaces or repeals outright.
+//
+// vbpl.vn records the relation ("thay thế") but keeps labelling the old
+// document in force or "hết hiệu lực một phần": TT 219/2013/TT-BTC was cited
+// as law in answers months after TT 69/2025/TT-BTC replaced it. Two things
+// must agree before a document is ended: vbpl.vn has an edge of that kind
+// from the amending document, and the amending text, which the corpus holds,
+// lists the old instrument as one it ends (see endsInline). A relation with
+// no text to confirm it, or one that ends only articles, leaves the
+// document as the source labels it. The day is the amending text's effective
+// date; the result maps the ended document to who ended it and when.
+func endedAsAWhole(c *Corpus, edges []Amendment) map[string]Ended {
+	out := map[string]Ended{}
+	for _, e := range edges {
+		switch e.Relation {
+		case "replaces", "repeals", "expires":
+		default:
+			continue
+		}
+		am := c.Docs[e.From]
+		if am == nil || am.EffectiveFrom == "" || am.SourceKind == corpus.SourceConsolidated {
+			continue
+		}
+		var bases []*Doc
+		if d := c.Docs[e.ToDoc]; d != nil {
+			bases = append(bases, d)
+		} else if e.ToNumber != "" {
+			bases = c.numbers[corpus.NormNumber(e.ToNumber)]
+		}
+		for _, base := range bases {
+			if base.SourceKind == corpus.SourceConsolidated || base.ID == am.ID || !listsAsEnded(c, am, base.OfficialNumber) {
+				continue
+			}
+			if prev, ok := out[base.ID]; !ok || am.EffectiveFrom < prev.On {
+				out[base.ID] = Ended{By: am.ID, On: am.EffectiveFrom}
+			}
+		}
+	}
+	return out
+}
+
+// listsAsEnded reports whether a chunk of am ends the instrument numbered
+// number as a whole.
+func listsAsEnded(c *Corpus, am *Doc, number string) bool {
+	want := corpus.NormNumber(number)
+	for _, ch := range c.byDoc[am.ID] {
+		if !strings.Contains(ch.Text, number) {
+			continue
+		}
+		lines := strings.Split(ch.Text, "\n")
+		for i, raw := range lines {
+			line := strings.TrimSpace(raw)
+			if !strings.Contains(line, number) || strings.HasPrefix(line, `"`) || strings.HasPrefix(line, "“") {
+				continue
+			}
+			if m := endsInline.FindStringSubmatch(line); m != nil && corpus.NormNumber(m[1]) == want {
+				return true
+			}
+			// An item of a list: the first number in it is its own instrument,
+			// the rest belong to the instruments its title speaks of.
+			if !endsItem.MatchString(line) {
+				continue
+			}
+			if first := officialNum.FindString(line); first == "" || corpus.NormNumber(first) != want {
+				continue
+			}
+			for j := i - 1; j >= 0; j-- {
+				prev := strings.TrimSpace(lines[j])
+				if prev == "" {
+					continue
+				}
+				if listMark.MatchString(prev) && endsItem.MatchString(prev) {
+					continue // another item of the same list
+				}
+				if endsLead.MatchString(prev) && !partLead.MatchString(prev) {
+					return true
+				}
+				break
+			}
+		}
+	}
+	return false
 }
 
 // amendedProvisions lists what an amending document changes in the document

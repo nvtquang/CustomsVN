@@ -78,16 +78,33 @@ type Corpus struct {
 	// exceptions maps an article to the provisions of its instrument that
 	// say when it does not apply (see Exceptions).
 	exceptions map[string][]string
+	// transitions maps an article to the transition provisions of its
+	// instrument that refer to it (see Transitions).
+	transitions map[string][]string
 	// stale maps a chunk an amendment rewrote to the day it stopped being
 	// the law (see superseded).
 	stale map[string]string
+	// ended maps a document a later text replaced or repealed as a whole to
+	// that text and its day (see endedAsAWhole).
+	ended map[string]Ended
 }
 
-// SetAmendments records which chunks amendments rewrote, so they stop
-// grounding answers from the day the amendment took effect.
+// SetAmendments records which chunks amendments rewrote, and which documents
+// later texts ended as a whole, so they stop grounding answers from the day
+// the new text took effect.
 func (c *Corpus) SetAmendments(edges []Amendment) {
 	c.stale = superseded(c, edges)
+	c.ended = endedAsAWhole(c, edges)
 }
+
+// EndedBy says who replaced or repealed a document as a whole by asOf.
+func (c *Corpus) EndedBy(docID, asOf string) (Ended, bool) {
+	e, ok := c.ended[docID]
+	return e, ok && e.On <= asOf
+}
+
+// EndedCount is how many documents later texts ended, for the startup log.
+func (c *Corpus) EndedCount() int { return len(c.ended) }
 
 // Superseded reports whether an amendment in force on asOf rewrote the chunk.
 func (c *Corpus) Superseded(chunkID, asOf string) bool {
@@ -220,14 +237,14 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (*Corpus, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = pool.Query(ctx, `SELECT from_doc, coalesce(to_doc, ''), to_number FROM edges WHERE kind = 'amends'`)
+	rows, err = pool.Query(ctx, `SELECT from_doc, coalesce(to_doc, ''), to_number, relation FROM edges WHERE kind = 'amends'`)
 	if err != nil {
 		return nil, err
 	}
 	var edges []Amendment
 	for rows.Next() {
 		var e Amendment
-		if err := rows.Scan(&e.From, &e.ToDoc, &e.ToNumber); err != nil {
+		if err := rows.Scan(&e.From, &e.ToDoc, &e.ToNumber, &e.Relation); err != nil {
 			return nil, err
 		}
 		edges = append(edges, e)
@@ -257,7 +274,12 @@ func (c *Corpus) Force(d *Doc, asOf, today string) string {
 		if base == nil {
 			return ""
 		}
-		return ForceAt(base.meta(), asOf, today)
+		return c.Force(base, asOf, today)
+	}
+	// A text that replaced this one as a whole ends it, whatever the source's
+	// label says.
+	if _, gone := c.EndedBy(d.ID, asOf); gone {
+		return ""
 	}
 	return ForceAt(d.meta(), asOf, today)
 }

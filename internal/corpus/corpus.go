@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Meta is a store document without its provisions. Tiering and the force
@@ -79,6 +80,32 @@ func pad2(n int) string {
 	return strconv.Itoa(n)
 }
 
+// undeterminedWindow is how long after taking effect a document the source
+// still calls "Chưa xác định" is taken to be waiting for its label.
+const undeterminedWindow = 365 * 24 * time.Hour
+
+// statusOf is the source's status label, with one correction. vbpl.vn gives a
+// new text no label for a while: decree 275/2026/NĐ-CP, parsed whole and in
+// effect since 25/8/2026, was dropped from the corpus as "Chưa xác định", and
+// with it the answer to a question on declaring imported chemicals. A text
+// with no label, whose effective date has come, with no expiry date, within a
+// year of taking effect, and that is not a consolidated text (those take their
+// base's force) counts as in force. A later text that replaces it ends it
+// through the amendment edges (search.endedAsAWhole), as it ends any other.
+func statusOf(m *Meta, asOf string) string {
+	st := strings.TrimSpace(m.ForceStatus)
+	if st != StatusUndetermined || m.ExpiredOn != "" || strings.Contains(strings.ToUpper(m.OfficialNumber), "VBHN") {
+		return st
+	}
+	eff, now := ISODate(m.EffectiveFrom), ISODate(asOf)
+	from, err1 := time.Parse(time.DateOnly, eff)
+	to, err2 := time.Parse(time.DateOnly, now)
+	if err1 != nil || err2 != nil || eff > now || to.Sub(from) > undeterminedWindow {
+		return st
+	}
+	return StatusInForce
+}
+
 // Force is the force a document has on asOf, or "" when it is no longer law.
 //
 // The expiry date wins over the status label, because the source updates the
@@ -86,7 +113,7 @@ func pad2(n int) string {
 // passed is gone. A partly expired document is the exception, since its expiry
 // date names the part that ended and not the whole.
 func Force(m *Meta, asOf string) string {
-	st := strings.TrimSpace(m.ForceStatus)
+	st := statusOf(m, asOf)
 	if exp := ISODate(m.ExpiredOn); exp != "" && exp <= asOf && st != StatusPartly {
 		return ""
 	}
@@ -100,7 +127,7 @@ func Force(m *Meta, asOf string) string {
 // Force restricted to documents the parser turned into structure, and why a
 // dropped document was dropped. It feeds the in-force counts of the baseline.
 func Kept(m *Meta, asOf string) (force, reason string) {
-	st := strings.TrimSpace(m.ForceStatus)
+	st := statusOf(m, asOf)
 	if exp := ISODate(m.ExpiredOn); exp != "" && exp <= asOf && st != StatusPartly {
 		return "", "expiry date has passed"
 	}

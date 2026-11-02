@@ -36,6 +36,11 @@ A full run takes one to two minutes. Two runs with the same inputs and `-as-of` 
 
 A document is kept when it is in force on the as-of day. The expiry date wins over the status label, because the source updates the date before the label; a partly expired document is the exception, since its expiry date names the part that ended.
 
+Two corrections to the label, both in code and both visible in the tests:
+
+- **A text with no label yet.** vbpl.vn gives a new text no status for a while ("Chưa xác định"). Decree 275/2026/NĐ-CP, parsed whole and in effect since 25/8/2026, was dropped as undetermined. A text with that label, whose effective date has come, with no expiry date, within a year of taking effect, and that is not a consolidated text counts as in force (`corpus.statusOf`). Four tier 1-2 documents of 2026 were in this case on 2026-11-02 (24/2026/TT-BCT, 86/2026/TT-BTC, 248/2026/NĐ-CP, 275/2026/NĐ-CP).
+- **A text a later one replaced.** At search time, not in prep: where vbpl.vn has a `replaces`, `repeals` or `expires` edge from a text in the corpus, and that text's own wording lists the old instrument as one it ends (an item of "Thông tư này thay thế:", or "Nghị định này thay thế Nghị định số ..."), the old one ends on the new one's effective day, and so do the VBHN that consolidate it (`search.endedAsAWhole`). An item that opens with an article or a chapter ("Điều 3 Thông tư số 119/2014/TT-BTC") ends a part, not the instrument, and is left alone; so is an edge with no text to confirm it. TT 219/2013/TT-BTC was cited as law for months after TT 69/2025/TT-BTC replaced it; on 2026-11-02 this ends 119 documents (16 of tier 1) that the source still called in force or partly in force.
+
 ### Sources and chunks
 
 Chunks come from three sources, in the order a retriever should trust them:

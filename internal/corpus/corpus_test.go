@@ -420,3 +420,30 @@ func TestChunkingValidate(t *testing.T) {
 		}
 	}
 }
+
+// A text vbpl.vn has not labelled yet counts as in force for a year after it
+// takes effect, unless it is a consolidated text, has an expiry date, or has
+// not taken effect.
+func TestAnUnlabelledNewTextIsInForce(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		m    Meta
+		want string
+	}{
+		{"275/2026 in effect since August", Meta{OfficialNumber: "275/2026/NĐ-CP", ForceStatus: StatusUndetermined, EffectiveFrom: "25/08/2026"}, ForceInForce},
+		{"ISO date", Meta{OfficialNumber: "86/2026/TT-BTC", ForceStatus: StatusUndetermined, EffectiveFrom: "2026-07-01"}, ForceInForce},
+		{"in effect on the day", Meta{OfficialNumber: "x", ForceStatus: StatusUndetermined, EffectiveFrom: asOf}, ForceInForce},
+		{"not yet in effect", Meta{OfficialNumber: "x", ForceStatus: StatusUndetermined, EffectiveFrom: "01/01/2027"}, ""}, // unchanged: no label and not yet in effect
+		{"older than a year", Meta{OfficialNumber: "x", ForceStatus: StatusUndetermined, EffectiveFrom: "01/01/2025"}, ""},
+		{"no effective date", Meta{OfficialNumber: "x", ForceStatus: StatusUndetermined}, ""},
+		{"has an expiry date", Meta{OfficialNumber: "x", ForceStatus: StatusUndetermined, EffectiveFrom: "01/07/2026", ExpiredOn: "01/09/2026"}, ""},
+		{"a consolidated text", Meta{OfficialNumber: "18/VBHN-BTC", ForceStatus: StatusUndetermined, EffectiveFrom: "04/06/2026"}, ""},
+	} {
+		if got := Force(&c.m, asOf); got != c.want {
+			t.Errorf("%s: Force = %q, want %q", c.name, got, c.want)
+		}
+	}
+	if f, why := Kept(&Meta{OfficialNumber: "275/2026/NĐ-CP", ForceStatus: StatusUndetermined, EffectiveFrom: "25/08/2026", Status: "parsed"}, asOf); f != ForceInForce || why != "" {
+		t.Errorf("Kept = %q, %q", f, why)
+	}
+}
