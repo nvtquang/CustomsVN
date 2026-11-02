@@ -53,6 +53,8 @@ The format is the one in PLAN.md: CSV or JSON with `id, question, expected_provi
 
 `goldsets/provisional.csv` is a stopgap until the experts' set arrives: 45 questions written against the article headings of ten core instruments (41 answerable, 4 to refuse). It measures the system on questions phrased by a developer, so its numbers are a floor to improve on, not a quality claim.
 
+`goldsets/eval60.csv` (2026-10-30/31) grades the answers as well: 60 questions by cognitive level (recall, understanding, application, analysis, traps, open, refusal, and synthesis across two or three instruments), each with an expected answer checked against the in-force text. `goldsets/mini10.csv` is ten of them, picked because each fix moves them, plus two controls, for runs of a few cents; since 2026-11-02 it also holds three regression questions on force and consolidated texts (s01-s03, see [quality.md](quality.md)).
+
 ## Baseline
 
 Corpus version 1 (2026-10-27, without `legacy_content`), provisional gold set, BM25 only (no embedding key on the development machine):
@@ -77,6 +79,16 @@ The one new miss, t14 ("which goods are exempt from import duty"), now ranks the
 Seven questions miss the top 10: t05 (release before clearance), t07 (inspection in the declarant's absence), t13 (duty payment deadline), t27 (wholly obtained goods), t30 (when to submit a C/O), t35 (late declaration penalty) and t39 (who is a declarant). Most are phrased away from the wording of the article. The embedding benchmark is the next step, and it needs an API key for each provider in `customsvn.example.yaml`.
 
 Preferring consolidated wording changes nothing on this set, because without `-legacy` the core instruments in it have no VBHN in the corpus.
+
+Corpus version 3 with every chunk embedded (`openrouter/openai/text-embedding-3-small`, 149,939 chunks, 2 h 48 min), `eval60`, 55 questions with expected provisions, run on the server (2026-10-31):
+
+| Configuration | R@1 | R@5 | R@10 | Hit@10 | MRR | p50 per query |
+| --- | --- | --- | --- | --- | --- | --- |
+| BM25 | 0.388 | 0.591 | 0.655 | 0.782 | 0.552 | 0.6 s |
+| Hybrid | 0.397 | 0.545 | 0.639 | 0.745 | 0.540 | 4.6 s |
+| Hybrid + rerank (cohere/rerank-v3.5) | 0.385 | 0.600 | 0.673 | 0.782 | 0.576 | 5.3 s |
+
+Vectors alone do not help on this set; the reranker gains about one question in the top 10 (application 0.60 → 0.70, open 0.33 → 0.46, synthesis 0.37 → 0.42) and loses one (understanding 0.81 → 0.69). Most of the extra time is the API call that embeds the query. `customsvn eval` on the command line sees only the config file's models: without one there, `-mode hybrid` and `-rerank` run BM25 and say so only at warning level, so measure the settings screen's models through `/lab/retrieval`.
 
 ## API
 
