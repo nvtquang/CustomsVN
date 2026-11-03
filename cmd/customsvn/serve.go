@@ -246,8 +246,15 @@ func runEmbed(args []string) error {
 	model := fs.String("model", "", "embedding model name from the config (default the first)")
 	limit := fs.Int("limit", 0, "stop after this many chunks (0 = all)")
 	target := fs.String("target", "chunks", "what to embed: chunks or hs (HS descriptions)")
+	shard := fs.String("shard", "", "k/n: embed only the k-th of n slices of the pending chunks, so n runs can work at once")
 	if ok, err := parse(fs, args); !ok {
 		return err
+	}
+	var shardK, shardN int
+	if *shard != "" {
+		if _, err := fmt.Sscanf(*shard, "%d/%d", &shardK, &shardN); err != nil || shardN < 2 {
+			return fmt.Errorf("-shard wants k/n with n of at least 2, got %q", *shard)
+		}
 	}
 	ctx, cancel := signalContext()
 	defer cancel()
@@ -277,7 +284,7 @@ func runEmbed(args []string) error {
 		}
 		return err
 	}
-	res, err := embed.EmbedChunks(ctx, pool, emb, m.Provider, m.Model, embed.StoreOptions{Limit: *limit, Log: os.Stderr})
+	res, err := embed.EmbedChunks(ctx, pool, emb, m.Provider, m.Model, embed.StoreOptions{Limit: *limit, Shard: shardK, Shards: shardN, Log: os.Stderr})
 	if res != nil {
 		_ = printJSON(res)
 	}

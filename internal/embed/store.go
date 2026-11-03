@@ -17,7 +17,11 @@ type StoreOptions struct {
 	Limit int
 	// Docs restricts to chunks of these documents.
 	Docs []string
-	Log  io.Writer
+	// Shard and Shards split the pending chunks by a hash of their id, so
+	// several runs can work at once without embedding the same chunk twice.
+	// Shards zero means no split.
+	Shard, Shards int
+	Log           io.Writer
 }
 
 // StoreResult is what a run did.
@@ -55,6 +59,12 @@ func EmbedChunks(ctx context.Context, pool *pgxpool.Pool, e Embedder, provider, 
 	if len(opts.Docs) > 0 {
 		where += ` AND c.document_id = ANY($2)`
 		args = append(args, opts.Docs)
+	}
+	if opts.Shards > 1 {
+		if opts.Shard < 0 || opts.Shard >= opts.Shards {
+			return nil, fmt.Errorf("shard %d is outside 0..%d", opts.Shard, opts.Shards-1)
+		}
+		where += fmt.Sprintf(` AND abs(hashtext(c.id)::bigint) %% %d = %d`, opts.Shards, opts.Shard)
 	}
 	res := &StoreResult{Model: e.Name()}
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM chunks c LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id AND e.model = $1 WHERE `+where, args...).Scan(&res.Pending); err != nil {
