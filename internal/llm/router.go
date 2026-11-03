@@ -26,6 +26,9 @@ type Router struct {
 	mu       sync.Mutex
 	targets  map[string][]Target
 	cooldown map[string]time.Time
+	// lastErr is what put a provider in cooldown, so a call refused during the
+	// cooldown says why.
+	lastErr  map[string]error
 	Now      func() time.Time
 }
 
@@ -39,7 +42,7 @@ var cooldowns = map[string]time.Duration{
 
 // NewRouter returns a router with no targets.
 func NewRouter() *Router {
-	return &Router{targets: map[string][]Target{}, cooldown: map[string]time.Time{}, Now: time.Now}
+	return &Router{targets: map[string][]Target{}, cooldown: map[string]time.Time{}, lastErr: map[string]error{}, Now: time.Now}
 }
 
 // Set replaces the targets of a role.
@@ -71,10 +74,10 @@ func (r *Router) Stream(ctx context.Context, role string, req Request, onDelta f
 	for _, t := range targets {
 		name := t.Provider.Name()
 		r.mu.Lock()
-		until := r.cooldown[name]
+		until, cause := r.cooldown[name], r.lastErr[name]
 		r.mu.Unlock()
 		if r.Now().Before(until) {
-			errs = append(errs, fmt.Errorf("%s cooling down until %s", name, until.Format(time.TimeOnly)))
+			errs = append(errs, fmt.Errorf("%s cooling down until %s after: %v", name, until.Format(time.TimeOnly), cause))
 			continue
 		}
 		started := false
@@ -98,6 +101,7 @@ func (r *Router) Stream(ctx context.Context, role string, req Request, onDelta f
 		if d, ok := cooldowns[kind]; ok {
 			r.mu.Lock()
 			r.cooldown[name] = r.Now().Add(d)
+			r.lastErr[name] = err
 			r.mu.Unlock()
 		}
 		errs = append(errs, err)
