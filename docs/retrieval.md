@@ -5,14 +5,14 @@ Phase 1 of [PLAN.md](PLAN.md): measure search quality before there is a chatbot.
 ## Running it
 
 ```sh
-docker compose -f deploy/docker-compose.yml up -d          # PostgreSQL 17 + pgvector on :55432
+docker compose up -d db                                    # PostgreSQL 17 + pgvector on :55432
 export CUSTOMSVN_DATABASE_URL='postgres://customsvn:customsvn@localhost:55432/customsvn?sslmode=disable'
 export LUATDO_DATA=/path/to/luatdo
 
 customsvn prep -as-of 2026-10-27        # build the corpus (docs/corpus.md)
 customsvn ingest                        # load it; migrates the schema first
 customsvn embed -model openai-3-large-1024   # optional, needs the key named in customsvn.yaml
-customsvn eval -goldset goldsets/provisional.csv
+customsvn eval -goldset <gold set .csv>
 customsvn serve                         # API and Web UI on 127.0.0.1:8080
 ```
 
@@ -51,9 +51,9 @@ Questions marked `should_refuse` are counted but left out of the ranking metrics
 
 The format is the one in PLAN.md: CSV or JSON with `id, question, expected_provisions, expected_answer, as_of_date, category, should_refuse, notes`. Expected provisions are written as text ("khoản 1 Điều 18 Luật Hải quan 54/2014/QH13", several separated by `;`) and resolved to identifiers when the set is imported. Every unresolvable row is reported at once. Importing under an existing name adds a version.
 
-`goldsets/provisional.csv` is a stopgap until the experts' set arrives: 45 questions written against the article headings of ten core instruments (41 answerable, 4 to refuse). It measures the system on questions phrased by a developer, so its numbers are a floor to improve on, not a quality claim.
+Gold sets are no longer kept in the repo (test data, removed 2026-11-04); import one of your own, in the format above, with `customsvn eval -goldset F` or `POST /api/goldsets`. Two sets were used while building: a provisional one, a stopgap of 45 questions written against the article headings of ten core instruments (41 answerable, 4 to refuse). It measures the system on questions phrased by a developer, so its numbers are a floor to improve on, not a quality claim.
 
-`goldsets/eval60.csv` (2026-10-30/31) grades the answers as well: 60 questions by cognitive level (recall, understanding, application, analysis, traps, open, refusal, and synthesis across two or three instruments), each with an expected answer checked against the in-force text. `goldsets/mini10.csv` is ten of them, picked because each fix moves them, plus two controls, for runs of a few cents; since 2026-11-02 it also holds three regression questions on force and consolidated texts (s01-s03, see [quality.md](quality.md)).
+`eval60` (2026-10-30/31) graded the answers as well: 60 questions by cognitive level (recall, understanding, application, analysis, traps, open, refusal, and synthesis across two or three instruments), each with an expected answer checked against the in-force text. `mini10` was ten of them, picked because each fix moves them, plus two controls, for runs of a few cents; from 2026-11-02 it also held three regression questions on force and consolidated texts (s01-s03, see [quality.md](quality.md)).
 
 ## Baseline
 

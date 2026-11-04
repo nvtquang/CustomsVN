@@ -17,11 +17,11 @@ The force fault is in code, not in the source: `corpus.Force` reads the status l
 
 ## Test set
 
-The measure is the 50 questions the experts reviewed (`Bo_50_cau_hoi_chatbot_hai_quan.docx`, answers and scoring in `Dap_an_va_cham_diem_chatbot_hai_quan.xlsx`: content 0-5, citation 0-3, force and traps 0-2, a serious error zeroes the question). The 94-question hand-graded run and `goldsets/eval60.csv` are not used to judge quality any more (owner's decision, 2026-11-02). `customsvn ask -questions F -out F` puts a list of questions through the whole answer, each in a fresh conversation, with no login, and writes what a reader would have seen; the file is then graded against the sheet.
+The measure is the 50 questions the experts reviewed (a Word file of questions and an Excel sheet of answers and scoring, kept outside the repo: content 0-5, citation 0-3, force and traps 0-2, a serious error zeroes the question). The 94-question hand-graded run and the `eval60` gold set are not used to judge quality any more (owner's decision, 2026-11-02). `customsvn ask -questions F -out F` puts a list of questions through the whole answer, each in a fresh conversation, with no login, and writes what a reader would have seen; the file is then graded against the sheet.
 
 ## Phases
 
-Each step is tested without network or credentials. Mini10 stays as the cheap check between runs.
+Each step is tested without network or credentials. A small gold set of your own is the cheap check between runs (the repo no longer ships one).
 
 **0. Baseline.** `stale_citations` (answers citing a provision that is no longer law on the question's day; the rule is 0) is a metric of every answer run. mini10 holds three regression questions (s01-s03). Done.
 

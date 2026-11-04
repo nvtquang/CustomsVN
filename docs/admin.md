@@ -41,7 +41,7 @@ The model is one line of defence and the code is the other:
 2. **Verification.** A claim reaches the reader only if every quote is found verbatim in the chunk it cites, as before. A model that obeys "answer without citations", "quote the rules you were given" or "cite source 9" produces claims that are dropped.
 3. **No links.** A claim with a Markdown link or image, HTML, `javascript:` or `data:` content, or a web address that is not written in its cited sources, is dropped (`link`). A refusal reason with any of these is replaced, and such suggestions are left out. The chat renders claims without links or images whatever they contain, so a claim can never make the browser fetch an address carrying the conversation.
 
-`internal/answer/injection_test.go` is the attack suite: overriding the rules, leaking the system prompt, a quote planted in the question, an invented source, exfiltration through an image, a phishing link, HTML, breaking the output format, a question that closes its own block, and an instruction inside a source. `goldsets/injection.csv` holds the same attacks for a real model in `/lab/answers`: pure attacks must be refused, and an attack wrapped around a real question must still be answered from the law.
+`internal/answer/injection_test.go` is the attack suite: overriding the rules, leaking the system prompt, a quote planted in the question, an invented source, exfiltration through an image, a phishing link, HTML, breaking the output format, a question that closes its own block, and an instruction inside a source. The same attacks can be put to a real model in `/lab/answers` (import them as a gold set): pure attacks must be refused, and an attack wrapped around a real question must still be answered from the law.
 
 ## Configuration export and import
 
@@ -64,7 +64,7 @@ The model is one line of defence and the code is the other:
 
 Each question's answer is stored, so a run can be opened question by question (problems only by default), and two runs compared metric by metric with the questions whose outcome changed. The run's stored configuration is the one in effect, with the overrides merged in.
 
-First measurements with a real model (`openai/gpt-6-luna` answering and gathering, `google/gemini-3.5-flash` routing), `goldsets/eval60.csv`, graded by hand against the expected answers as well as by the metrics above:
+First measurements with a real model (`openai/gpt-6-luna` answering and gathering, `google/gemini-3.5-flash` routing), the 60-question gold set `eval60`, graded by hand against the expected answers as well as by the metrics above:
 
 | | 2026-10-30, before the fixes | 2026-10-31, after |
 | --- | --- | --- |
@@ -131,6 +131,6 @@ With the defaults (general chunking at 4,000, top K 8, no threshold, no parent c
 ## Tests
 
 - Go: `internal/auth` (hashing, validation), `internal/ratelimit`, `internal/jobs` (log and progress), `internal/evalx` (answer scoring), `internal/answer` (the attack suite).
-- Playwright, in `web/e2e`, against a running test server with a loaded corpus and a fake model: login and logout, a user kept out of admin screens and APIs, a verified answer with its source panel, a 👎 reviewed and turned into a gold item, a refusal, the shortcuts, history, the dashboard, a job queued and canceled with its log, user creation, a config export without keys, an answer evaluation, and the phone layout. 13 tests pass against the embedded UI. See [web/e2e/README.md](../web/e2e/README.md).
+- Browser tests (Playwright against a fake model) were removed on 2026-11-04: they overwrote the model settings of the database they ran against. The UI is covered by Vitest, lint and typecheck; try the flows by hand on the running app.
 
 Still open from the plan: an expert week on the beta with every 👎 handled in the review screen, and the thresholds that need real API keys and the experts' gold set.

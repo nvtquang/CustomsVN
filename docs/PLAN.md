@@ -280,7 +280,7 @@ Backend:
 - [x] Package `refs`: tham chiếu điều khoản, số hiệu, mã HS
 - [x] API Retrieval Testing: một truy vấn, nhập gold set, chạy hàng loạt, lưu và so sánh lần chạy
 - [x] Metric: recall@k, MRR, nDCG@10, tỷ lệ chunk hết hiệu lực trong top-10, độ trễ p50/p95
-- [x] Gold set tạm khoảng 40 câu trong lúc chờ chuyên gia — `goldsets/provisional.csv`, 45 câu
+- [x] Gold set tạm khoảng 40 câu trong lúc chờ chuyên gia — 45 câu (file đã gỡ khỏi repo 2026-11-04, xem docs/retrieval.md)
 
 Web UI:
 
@@ -355,7 +355,7 @@ Backend:
 - [x] Đăng nhập session cookie; mặc định một admin; tùy chọn nhiều người dùng, vai trò admin/user
 - [x] Giới hạn tốc độ; ghi token và chi phí vào `usage`
 - [x] Job nền cho ingest/embed: hàng đợi, tiến độ, log — thêm cả prep
-- [x] Chống prompt injection: nội dung văn bản là dữ liệu, không phải chỉ dẫn; bộ test tấn công mẫu — rào câu hỏi và nguồn, loại nhận định có link/ảnh/HTML; `internal/answer/injection_test.go`, `goldsets/injection.csv`
+- [x] Chống prompt injection: nội dung văn bản là dữ liệu, không phải chỉ dẫn; bộ test tấn công mẫu — rào câu hỏi và nguồn, loại nhận định có link/ảnh/HTML; `internal/answer/injection_test.go`
 - [x] Xuất/nhập cấu hình (không kèm secret)
 - [x] Đánh giá câu trả lời end-to-end: trung thành nguồn, trích dẫn đúng, từ chối đúng lúc — chấm bằng code, không dùng model làm giám khảo
 
@@ -367,11 +367,11 @@ Web UI:
 - [x] Dashboard: số câu hỏi, tỷ lệ từ chối, độ trễ, chi phí theo ngày
 - [x] Đăng nhập, quản lý người dùng
 - [x] Hoàn thiện UX: mobile, phím tắt, accessibility, trạng thái loading
-- [x] Playwright cho các luồng chính — 13 test, chạy với máy chủ thử và model giả (`web/e2e`)
+- [x] Playwright cho các luồng chính — đã làm rồi bỏ ngày 2026-11-04 (ghi đè cấu hình model của DB đang chạy)
 
 Hoàn thành khi: chuyên gia dùng một tuần, mọi 👎 được xử lý qua màn hình review; Playwright pass.
 
-Kết quả (2026-10-28): đủ chức năng ([admin.md](admin.md)); Playwright pass 13/13 với model giả. Còn lại: tuần dùng thử của chuyên gia.
+Kết quả (2026-10-28): đủ chức năng ([admin.md](admin.md)); Playwright đã bỏ. Còn lại: tuần dùng thử của chuyên gia.
 
 ## Phase 5 — Phát hành open source v1.0 (tuần 18–19)
 
