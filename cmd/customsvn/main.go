@@ -89,7 +89,7 @@ func usage() error {
   bootstrap          first data load: luatdo, prep, migrate, ingest
   mcp                serve MCP over stdin/stdout (the server also serves it at /mcp)
   user list|add|passwd  manage accounts of the Web UI
-  crawl              fetch what is new on vbpl.vn into a new dataset revision (the server runs it weekly)`)
+  crawl              fetch what is new on vbpl.vn, then parse, prep, ingest and embed it (-crawl-only stops early; the server runs it on a schedule)`)
 }
 
 // parse parses flags and treats -h as success.

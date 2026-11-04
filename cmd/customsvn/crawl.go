@@ -61,39 +61,47 @@ func crawlJob(cfg *config.Config, pool *pgxpool.Pool, kinds map[string]jobs.Func
 		if res.Revision == "" {
 			return nil
 		}
-		luatdo := orDefault(os.Getenv(LuatdoEnv), "luatdo")
-		for _, step := range [][]string{
-			{"parse", "--data", cfg.Data, "--dataset", "th1nhng0"},
-			{"cite", "--data", cfg.Data},
-			{"subjects", "--data", cfg.Data},
-		} {
-			fmt.Fprintf(log, "luatdo %s\n", step[0])
-			cmd := exec.CommandContext(ctx, luatdo, step...)
-			cmd.Stdout, cmd.Stderr = log, log
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("luatdo %s: %w", step[0], err)
-			}
+		return loadRevision(ctx, cfg, pool, kinds, log)
+	}
+}
+
+// loadRevision takes the revision a crawl just wrote into the database: luatdo's
+// parse, cite and subjects, then prep, ingest and the embeddings of the new
+// chunks. The server's job and the crawl command both end here, so a crawl
+// never leaves a revision that the database does not hold.
+func loadRevision(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, kinds map[string]jobs.Func, log io.Writer) error {
+	luatdo := orDefault(os.Getenv(LuatdoEnv), "luatdo")
+	for _, step := range [][]string{
+		{"parse", "--data", cfg.Data, "--dataset", "th1nhng0"},
+		{"cite", "--data", cfg.Data},
+		{"subjects", "--data", cfg.Data},
+	} {
+		fmt.Fprintf(log, "luatdo %s\n", step[0])
+		cmd := exec.CommandContext(ctx, luatdo, step...)
+		cmd.Stdout, cmd.Stderr = log, log
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("luatdo %s: %w", step[0], err)
 		}
-		for _, k := range []string{"prep", "ingest"} {
-			fmt.Fprintf(log, "--- %s\n", k)
-			if err := kinds[k](ctx, json.RawMessage(`{}`), log); err != nil {
-				return fmt.Errorf("%s: %w", k, err)
-			}
+	}
+	for _, k := range []string{"prep", "ingest"} {
+		fmt.Fprintf(log, "--- %s\n", k)
+		if err := kinds[k](ctx, json.RawMessage(`{}`), log); err != nil {
+			return fmt.Errorf("%s: %w", k, err)
 		}
-		var index string
-		_ = pool.QueryRow(ctx, `SELECT coalesce(value->>'index', '') FROM settings WHERE key = 'retrieval'`).Scan(&index)
-		if index == httpapi.IndexEconomy {
-			fmt.Fprintln(log, "embed skipped: the knowledge screen is set to economy (keywords only)")
-			return nil
-		}
-		fmt.Fprintln(log, "--- embed")
-		if err := kinds["embed"](ctx, json.RawMessage(`{}`), log); err != nil {
-			// The corpus is in: new chunks are found by keywords until an
-			// embed job runs.
-			fmt.Fprintf(log, "embed skipped: %v\n", err)
-		}
+	}
+	var index string
+	_ = pool.QueryRow(ctx, `SELECT coalesce(value->>'index', '') FROM settings WHERE key = 'retrieval'`).Scan(&index)
+	if index == httpapi.IndexEconomy {
+		fmt.Fprintln(log, "embed skipped: the knowledge screen is set to economy (keywords only)")
 		return nil
 	}
+	fmt.Fprintln(log, "--- embed")
+	if err := kinds["embed"](ctx, json.RawMessage(`{}`), log); err != nil {
+		// The corpus is in: new chunks are found by keywords until an
+		// embed job runs.
+		fmt.Fprintf(log, "embed skipped: %v\n", err)
+	}
+	return nil
 }
 
 // scheduleCrawls queues the crawl when its weekly or monthly slot has passed and none
@@ -140,8 +148,8 @@ func scheduleCrawls(ctx context.Context, pool *pgxpool.Pool, runner *jobs.Runner
 	}
 }
 
-// runCrawl runs the crawl alone and prints what it found. luatdo, prep and
-// ingest are left to run after it, as the weekly job runs them.
+// runCrawl runs the crawl and, unless -crawl-only is set, loads what it found
+// into the database the way the weekly job does: parse, prep, ingest, embed.
 func runCrawl(args []string) error {
 	fs := flag.NewFlagSet("crawl", flag.ContinueOnError)
 	maxPages := fs.Int("max-pages", crawl.DefaultSchedule().MaxPages, "catalogue pages walked, newest first")
@@ -149,6 +157,8 @@ func runCrawl(args []string) error {
 	targeted := fs.Bool("targeted", false, "skip the catalogue: fetch only the seeds of -tier1 and -fill, and the texts related to them")
 	tier1 := fs.Bool("tier1", false, "fetch again every document of tier 1 (and find the texts that replace or amend them)")
 	target := fs.Float64("target-concurrency", 1, "requests AutoThrottle aims to keep in flight (1 is the polite default; 2-3 speeds a crawl up)")
+	configPath := fs.String("config", "", "config file (default ./customsvn.yaml)")
+	crawlOnly := fs.Bool("crawl-only", false, "stop after the crawl: leave parse, prep, ingest and embed to run later")
 	fill := fs.Bool("fill", false, "fetch again every in-scope document whose text the source did not have")
 	if ok, err := parse(fs, args); !ok {
 		return err
@@ -164,5 +174,22 @@ func runCrawl(args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSON(res)
+	if err := printJSON(res); err != nil {
+		return err
+	}
+	if *crawlOnly || res.Revision == "" { // nothing new: nothing to load
+		return nil
+	}
+	cfg, pool, err := openDB(ctx, *configPath)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	cfg.Data = data
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	e, _, err := newEngine(ctx, cfg, pool, log)
+	if err != nil {
+		return err
+	}
+	return loadRevision(ctx, cfg, pool, jobKinds(cfg, pool, e), os.Stderr)
 }

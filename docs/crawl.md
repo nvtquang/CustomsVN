@@ -6,7 +6,7 @@ In scope for v1.0 since 2026-10-29 (owner's decision).
 
 ## What a run does
 
-`internal/crawl`, run as the `crawl` job (Data screen, or by the server on its schedule) or by `customsvn crawl` (`-rotate=false` fetches again only the documents the new ones act on, for a quick run by hand):
+`internal/crawl`, run as the `crawl` job (Data screen, or by the server on its schedule) or by `customsvn crawl`, which ends with the same steps unless `-crawl-only` is given (`-rotate=false` fetches again only the documents the new ones act on, for a quick run by hand):
 
 1. **New documents.** The spider walks the newest catalogue pages of vbpl.vn (`-max-pages`, 100 documents a page, default 20) and fetches every document the latest revision does not have. The catalogue lists the newest first.
 2. **Scope.** A new document is kept when its title, field or sector carries a customs or related cue (the tier 1 and tier 2 cues of `internal/corpus/tier.go`), or when it relates to a document already in tiers 1-2 (an amendment of a customs decree need not say "hải quan"). The rest are dropped.
