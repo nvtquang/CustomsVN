@@ -19,7 +19,7 @@ npm ci
 npm run build && npm run lint && npm run format:check && npm test
 ```
 
-Cơ sở dữ liệu cho phát triển: `docker compose -f deploy/docker-compose.yml up -d`, rồi đặt `CUSTOMSVN_DATABASE_URL` như ghi trong file đó. Cấu hình: chép `customsvn.example.yaml` thành `customsvn.yaml`. Quy trình đầy đủ ở [docs/retrieval.md](docs/retrieval.md).
+Cơ sở dữ liệu cho phát triển: `docker compose up -d db` (PostgreSQL ở cổng 55432 của máy), rồi đặt `CUSTOMSVN_DATABASE_URL=postgres://customsvn:<POSTGRES_PASSWORD>@localhost:55432/customsvn?sslmode=disable`. Cấu hình: chép `customsvn.example.yaml` thành `customsvn.yaml`. Quy trình đầy đủ ở [docs/retrieval.md](docs/retrieval.md).
 
 ## Nguyên tắc không thay đổi
 
