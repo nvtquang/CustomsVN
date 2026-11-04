@@ -19,9 +19,7 @@ go.work.sum
 /web/node_modules/
 /web/dist/*
 !/web/dist/.gitkeep
-/web/e2e/.auth/
 /web/test-results/
-/web/playwright-report/
 
 # editors and OS
 .vscode/
@@ -29,13 +27,9 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# python prototypes
-__pycache__/
-.venv/
-
-# browser automation scratch
-.playwright-mcp/
-
 # local compose overrides
 docker-compose.override.yml
 /web/.tanstack/
+
+# local config (copy customsvn.example.yaml)
+/customsvn.yaml
