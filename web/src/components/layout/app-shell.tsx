@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   MessageSquarePlus,
+  Scale,
   Settings,
   UserRound,
   X,
@@ -125,9 +126,12 @@ function Shell({ admin }: { admin: boolean }) {
         )}
       >
         <div className="flex h-14 items-center justify-between border-b px-4">
-          <div>
-            <div className="text-base font-semibold text-primary">{t("app.name")}</div>
-            <div className="text-2xs text-muted-foreground">{t("app.tagline")}</div>
+          <div className="flex items-center gap-2">
+            <Scale className="size-7 text-primary" aria-hidden />
+            <div>
+              <div className="text-base font-semibold text-primary">{t("app.name")}</div>
+              <div className="text-2xs text-muted-foreground">{t("app.tagline")}</div>
+            </div>
           </div>
           <Button
             variant="ghost"

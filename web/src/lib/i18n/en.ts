@@ -1,7 +1,7 @@
 import type { Messages } from "./vi";
 
 const en: Messages = {
-  app: { name: "CustomsVN", tagline: "Vietnamese customs law lookup" },
+  app: { name: "Hải Quan VN", tagline: "Vietnamese customs law lookup" },
   nav: {
     labRoom: "Lab",
     settingsAll: "Settings",
@@ -193,7 +193,7 @@ const en: Messages = {
     regenerate: "Answer again",
     emptyTitle: "Customs law questions",
     emptySubtitle:
-      "Every claim carries a verbatim quote that has been verified, and the force of its document. Without grounds, CustomsVN refuses.",
+      "Every claim carries a verbatim quote that has been verified, and the force of its document. Without grounds, Hải Quan VN refuses.",
     suggestionsTitle: "Try asking",
     suggestions: {
       s1: "What are the rights and duties of a customs declarant?",
@@ -229,7 +229,7 @@ const en: Messages = {
       server: "The LLM provider failed.",
       request: "The request was refused: {{msg}}",
       canceled: "Stopped.",
-      offline: "Lost the connection to the CustomsVN server.",
+      offline: "Lost the connection to the Hải Quan VN server.",
     },
   },
   feedback: {
@@ -359,7 +359,7 @@ const en: Messages = {
   },
   integrations: {
     title: "MCP and API",
-    subtitle: "Use CustomsVN from Claude Desktop, Dify, Open WebUI or your own program.",
+    subtitle: "Use Hải Quan VN from Claude Desktop, Dify, Open WebUI or your own program.",
     mcp: "MCP (Model Context Protocol)",
     mcpIntro:
       "The MCP server offers deterministic lookup tools and an ask tool that returns answers with verified quotes:",
@@ -738,7 +738,7 @@ const en: Messages = {
     evalCostShort: "Evaluation",
   },
   rs: {
-    subtitle: "How CustomsVN finds provisions before writing an answer. Applies to every question.",
+    subtitle: "How Hải Quan VN finds provisions before writing an answer. Applies to every question.",
     intro: "The defaults were tuned on the sample questions; change them only once you have measured something better.",
     tryLab: "Try it first in Retrieval Testing →",
     recommended: "Recommended",
@@ -945,7 +945,7 @@ const en: Messages = {
       vision: "Reads images and scanned documents.",
       speech: "Turns speech into text and back.",
     },
-    unusedType: "No CustomsVN feature uses this type of model yet, so none can be added.",
+    unusedType: "No Hải Quan VN feature uses this type of model yet, so none can be added.",
     soon: "Not used",
     empty: "No models of this type yet.",
     emptyAll: "No models yet. Click “Add model” to start.",

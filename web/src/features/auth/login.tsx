@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn, Scale } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -43,9 +43,12 @@ export function LoginScreen() {
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardContent className="space-y-5 p-6">
-          <div>
-            <h1 className="text-xl font-semibold text-primary">{t("app.name")}</h1>
-            <p className="text-xs text-muted-foreground">{t("app.tagline")}</p>
+          <div className="flex items-center gap-3">
+            <Scale className="size-9 text-primary" aria-hidden />
+            <div>
+              <h1 className="text-xl font-semibold text-primary">{t("app.name")}</h1>
+              <p className="text-xs text-muted-foreground">{t("app.tagline")}</p>
+            </div>
           </div>
           <form className="space-y-3" onSubmit={submit} aria-describedby={error ? "login-error" : undefined}>
             <Field label={t("auth.email")}>

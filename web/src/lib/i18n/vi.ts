@@ -1,6 +1,6 @@
 // Vietnamese is the default language. Every visible string goes through a key.
 const vi = {
-  app: { name: "CustomsVN", tagline: "Tra cứu pháp luật hải quan" },
+  app: { name: "Hải Quan VN", tagline: "Tra cứu pháp luật hải quan" },
   nav: {
     labRoom: "Phòng thử nghiệm",
     settingsAll: "Cài đặt",
@@ -192,7 +192,7 @@ const vi = {
     regenerate: "Trả lời lại",
     emptyTitle: "Hỏi đáp pháp luật hải quan",
     emptySubtitle:
-      "Mỗi nhận định đều kèm câu trích nguyên văn đã được kiểm chứng và hiệu lực của văn bản. Không đủ căn cứ thì CustomsVN từ chối.",
+      "Mỗi nhận định đều kèm câu trích nguyên văn đã được kiểm chứng và hiệu lực của văn bản. Không đủ căn cứ thì Hải Quan VN từ chối.",
     suggestionsTitle: "Thử hỏi",
     suggestions: {
       s1: "Người khai hải quan có những quyền và nghĩa vụ gì?",
@@ -228,7 +228,7 @@ const vi = {
       server: "Nhà cung cấp LLM đang gặp lỗi.",
       request: "Yêu cầu bị từ chối: {{msg}}",
       canceled: "Đã dừng.",
-      offline: "Mất kết nối tới máy chủ CustomsVN.",
+      offline: "Mất kết nối tới máy chủ Hải Quan VN.",
     },
   },
   feedback: {
@@ -357,7 +357,7 @@ const vi = {
   },
   integrations: {
     title: "Kết nối MCP và API",
-    subtitle: "Dùng CustomsVN từ Claude Desktop, Dify, Open WebUI hoặc chương trình của bạn.",
+    subtitle: "Dùng Hải Quan VN từ Claude Desktop, Dify, Open WebUI hoặc chương trình của bạn.",
     mcp: "MCP (Model Context Protocol)",
     mcpIntro: "Máy chủ MCP cung cấp các công cụ tra cứu tất định và công cụ ask trả lời đã kiểm chứng trích dẫn:",
     tools: {
@@ -736,7 +736,7 @@ const vi = {
     evalCostShort: "Đánh giá",
   },
   rs: {
-    subtitle: "Cách CustomsVN tìm điều khoản trước khi viết câu trả lời. Áp dụng cho mọi câu hỏi.",
+    subtitle: "Cách Hải Quan VN tìm điều khoản trước khi viết câu trả lời. Áp dụng cho mọi câu hỏi.",
     intro: "Mặc định đã được chỉnh trên bộ câu hỏi mẫu; chỉ đổi khi bạn đã đo được kết quả tốt hơn.",
     tryLab: "Thử trước trong Retrieval Testing →",
     recommended: "Khuyên dùng",
@@ -953,7 +953,7 @@ const vi = {
       vision: "Đọc ảnh và văn bản scan.",
       speech: "Chuyển giọng nói thành chữ và ngược lại.",
     },
-    unusedType: "CustomsVN chưa có tính năng nào dùng loại model này, nên chưa thêm được.",
+    unusedType: "Hải Quan VN chưa có tính năng nào dùng loại model này, nên chưa thêm được.",
     soon: "Chưa dùng",
     empty: "Chưa có model nào loại này.",
     emptyAll: "Chưa có model nào. Bấm “Thêm model” để bắt đầu.",
