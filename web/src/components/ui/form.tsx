@@ -1,6 +1,5 @@
 import type {
   InputHTMLAttributes,
-  LabelHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
@@ -20,10 +19,6 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 
 export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select className={cn(field, "h-10 pr-8", className)} {...props} />;
-}
-
-export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn("text-xs font-medium text-muted-foreground", className)} {...props} />;
 }
 
 export function Checkbox({

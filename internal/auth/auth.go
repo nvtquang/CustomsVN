@@ -232,11 +232,6 @@ func (s *Store) List(ctx context.Context) ([]User, error) {
 	return out, rows.Err()
 }
 
-// Get returns one user.
-func (s *Store) Get(ctx context.Context, id int64) (*User, error) {
-	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE id = $1`, id))
-}
-
 // Update is a change to a user; nil fields stay as they are.
 type Update struct {
 	Name     *string `json:"name,omitempty"`
